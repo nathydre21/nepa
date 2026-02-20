@@ -3,24 +3,3 @@ import { useStellar } from './hooks/useStellar';
 import { WalletConnector } from './components/WalletConnector';
 import { PaymentForm } from './components/PaymentForm';
 
-const App: React.FC = () => {
-  const { address, status, error, connectWallet, sendPayment } = useStellar();
-
-  return (
-    <div className="app-layout">
-      <header>
-        <h1>NEPA Payment Portal</h1>
-        <WalletConnector address={address} onConnect={connectWallet} />
-      </header>
-
-      <main>
-        {status === 'success' && <div className="success">Payment Successful!</div>}
-        {error && <div className="error">{error}</div>}
-        
-        <PaymentForm onSubmit={sendPayment} isLoading={status === 'loading'} />
-      </main>
-    </div>
-  );
-};
-
-export default App;
