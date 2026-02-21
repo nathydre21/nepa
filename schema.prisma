@@ -1,0 +1,147 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum BillStatus {
+  PENDING
+  PAID
+  OVERDUE
+}
+
+enum PaymentStatus {
+  SUCCESS
+  FAILED
+  PENDING
+}
+
+model User {
+  id        String    @id @default(uuid())
+  email     String    @unique
+  name      String?
+  phoneNumber String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  bills     Bill[]
+  payments  Payment[]
+  notificationPreference NotificationPreference?
+  notificationLogs       NotificationLog[]
+  documents              Document[]
+  reports                Report[]
+
+  @@index([email])
+}
+
+model Utility {
+  id        String   @id @default(uuid())
+  name      String
+  type      String
+  provider  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  bills     Bill[]
+
+  @@index([type])
+}
+
+model Bill {
+  id        String     @id @default(uuid())
+  amount    Decimal    @db.Decimal(10, 2)
+  lateFee   Decimal    @default(0) @db.Decimal(10, 2)
+  discount  Decimal    @default(0) @db.Decimal(10, 2)
+  dueDate   DateTime
+  status    BillStatus @default(PENDING)
+  userId    String
+  utilityId String
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id])
+  utility   Utility    @relation(fields: [utilityId], references: [id])
+  payments  Payment[]
+
+  @@index([userId])
+  @@index([utilityId])
+  @@index([status])
+  @@index([dueDate])
+}
+
+model Coupon {
+  id         String   @id @default(uuid())
+  code       String   @unique
+  amount     Decimal  @db.Decimal(10, 2)
+  type       String   // 'PERCENTAGE' or 'FIXED'
+  expiryDate DateTime
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  amount        Decimal       @db.Decimal(10, 2)
+  method        String
+  status        PaymentStatus @default(PENDING)
+  transactionId String?       @unique
+  billId        String
+  userId        String
+  createdAt     DateTime      @default(now())
+
+  bill          Bill          @relation(fields: [billId], references: [id])
+  user          User          @relation(fields: [userId], references: [id])
+
+  @@index([billId])
+  @@index([userId])
+  @@index([transactionId])
+}
+
+model NotificationPreference {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  email     Boolean  @default(true)
+  sms       Boolean  @default(false)
+  push      Boolean  @default(false)
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model NotificationLog {
+  id           String   @id @default(uuid())
+  userId       String
+  type         String
+  status       String
+  message      String?
+  scheduledFor DateTime?
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id])
+}
+
+model Document {
+  id           String   @id @default(uuid())
+  filename     String
+  originalName String
+  mimeType     String
+  size         Int
+  path         String
+  provider     String   // 'S3' or 'IPFS'
+  userId       String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+model Report {
+  id        String   @id @default(uuid())
+  title     String
+  type      String   // 'REVENUE', 'USER_GROWTH', 'BILLS'
+  data      Json
+  createdBy String
+  createdAt DateTime @default(now())
+  
+  user      User     @relation(fields: [createdBy], references: [id])
+}

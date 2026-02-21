@@ -13,6 +13,8 @@
     "@stellar/freighter-api": "^6.0.1",
     "@stellar/stellar-sdk": "^14.5.0",
     "@tailwindcss/vite": "^4.1.18",
+    "@walletconnect/sign-client": "^2.23.6",
+    "albedo": "^0.1.3",
     "date-fns": "^4.1.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
