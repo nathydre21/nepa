@@ -70,6 +70,7 @@ model User {
   notificationLogs       NotificationLog[]
   documents              Document[]
   reports                Report[]
+  webhooks               Webhook[]
   auditLogs              AuditLog[]
 
   @@index([email])
@@ -189,6 +190,79 @@ model Report {
   user      User     @relation(fields: [createdBy], references: [id])
 }
 
+model Webhook {
+  id                String   @id @default(uuid())
+  url               String
+  events            String[] // Array of event types to listen to
+  description       String?
+  secret            String   // HMAC secret for webhook signing
+  isActive          Boolean  @default(true)
+  retryPolicy       String   @default("EXPONENTIAL") // EXPONENTIAL, LINEAR, FIXED
+  maxRetries        Int      @default(3)
+  retryDelaySeconds Int      @default(60)
+  timeoutSeconds    Int      @default(30)
+  headers           Json?    // Custom headers
+  userId            String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  user              User     @relation(fields: [userId], references: [id])
+  hookedEvents      WebhookEvent[]
+  logs              WebhookLog[]
+
+  @@index([userId])
+  @@index([isActive])
+  @@index([createdAt])
+}
+
+model WebhookEvent {
+  id          String   @id @default(uuid())
+  webhookId   String
+  eventType   String   // e.g., 'payment.success', 'bill.created', 'payment.failed'
+  payload     Json     // Event data
+  deliveryUrl String   // The URL this event was sent to
+  status      String   @default("PENDING") // PENDING, DELIVERED, FAILED
+  attempts    Int      @default(0)
+  lastAttempt DateTime?
+  nextRetry   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  webhook     Webhook  @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  deliveryAttempts WebhookAttempt[]
+
+  @@index([webhookId])
+  @@index([status])
+  @@index([eventType])
+  @@index([createdAt])
+}
+
+model WebhookAttempt {
+  id         String   @id @default(uuid())
+  eventId    String
+  statusCode Int?
+  response   String?  // Response body from the webhook endpoint
+  error      String?  // Error message if delivery failed
+  duration   Int?     // Response time in milliseconds
+  createdAt  DateTime @default(now())
+  
+  event      WebhookEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@index([createdAt])
+}
+
+model WebhookLog {
+  id          String   @id @default(uuid())
+  webhookId   String
+  action      String   // e.g., 'CREATED', 'UPDATED', 'DELETED', 'TRIGGERED', 'FAILED'
+  details     String?
+  status      String   // SUCCESS, FAILURE, WARNING
+  createdAt   DateTime @default(now())
+  
+  webhook     Webhook  @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId])
 model UserSession {
   id           String   @id @default(uuid())
   userId       String

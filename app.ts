@@ -11,12 +11,7 @@ import { upload } from './middleware/upload';
 import { uploadDocument } from './controllers/DocumentController';
 import { getDashboardData, generateReport, exportData } from './controllers/AnalyticsController';
 import { applyPaymentSecurity, processPayment, getPaymentHistory, validatePayment } from './controllers/PaymentController';
-import { AuthenticationController } from './controllers/AuthenticationController';
-import { UserController } from './controllers/UserController';
-import { UserRole } from '@prisma/client';
-import { logger } from './services/logger';
-import { analyticsService } from './services/analytics';
-import { performanceMonitor } from './services/performanceMonitoring';
+
 
 const app = express();
 
@@ -208,7 +203,6 @@ app.post('/api/analytics/reports', apiKeyAuth, generateReport);
 // Export Route
 app.get('/api/analytics/export', apiKeyAuth, exportData);
 
-// Setup global error handling
-setupGlobalErrorHandling(app);
+
 
 export default app;
