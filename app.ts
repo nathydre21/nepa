@@ -12,6 +12,8 @@ import { upload } from './middleware/upload';
 import { uploadDocument } from './controllers/DocumentController';
 import { getDashboardData, generateReport, exportData } from './controllers/AnalyticsController';
 import { applyPaymentSecurity, processPayment, getPaymentHistory, validatePayment } from './controllers/PaymentController';
+import { createRecurring, listRecurring, cancelRecurring } from './controllers/RecurringController';
+import { paymentScheduler } from './services/PaymentScheduler';
 import { setupRateLimitRoutes } from './routes/rateLimitRoutes';
 
 const app = express();
@@ -136,6 +138,11 @@ app.post('/api/payment/process', ...applyPaymentSecurity, processPayment);
 app.get('/api/payment/history', apiKeyAuth, getPaymentHistory);
 app.post('/api/payment/validate', ...applyPaymentSecurity, validatePayment);
 
+// Recurring payment endpoints
+app.post('/api/recurring', authenticate, createRecurring);
+app.get('/api/recurring', authenticate, listRecurring);
+app.delete('/api/recurring/:id', authenticate, cancelRecurring);
+
 // Example protected route
 /**
  * @openapi
@@ -210,3 +217,10 @@ app.get('/api/analytics/export', apiKeyAuth, exportData);
 
 
 export default app;
+
+// Start background scheduler (cron) when the app module is loaded
+try {
+  paymentScheduler.start();
+} catch (err) {
+  console.error('Failed to start payment scheduler:', err);
+}
