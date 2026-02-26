@@ -46,7 +46,7 @@ jobs:
       - name: Install Dependencies
         run: |
           npm ci
-          cd api-testing && npm ci
+          cd api-testing && npm install
 
       - name: Setup Test Environment
         run: |

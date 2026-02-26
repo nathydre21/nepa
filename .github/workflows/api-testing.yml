@@ -52,6 +52,9 @@ jobs:
         cd api-testing
         npm install
 
+    - name: Install Redis client (for health check)
+      run: sudo apt-get update && sudo apt-get install -y redis-tools
+
     - name: Setup K6 for load testing
       run: |
         sudo gpg -k

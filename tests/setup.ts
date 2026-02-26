@@ -24,8 +24,8 @@ afterAll(async () => {
 
 beforeEach(async () => {
   // Clean up database before each test
-  const tablenames = await prisma.$queryRaw`SELECT tablename FROM pg_tables WHERE schemaname='public'`;
-  
+  const tablenames = await prisma.$queryRaw`SELECT tablename FROM pg_tables WHERE schemaname='public'` as Array<{ tablename: string }>;
+
   for (const { tablename } of tablenames) {
     if (tablename !== '_prisma_migrations') {
       try {
