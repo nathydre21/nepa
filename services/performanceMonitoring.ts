@@ -75,10 +75,11 @@ class PerformanceMonitor {
 
     logger.debug('Timer ended', {
       timerId: id,
-      duration: `${duration.toFixed(2)}ms`,
+      duration,
+      durationMs: `${duration.toFixed(2)}ms`,
       memoryDelta: {
-        rss: completedMetric.memoryUsage.rss - metric.memoryUsage.rss,
-        heapUsed: completedMetric.memoryUsage.heapUsed - metric.memoryUsage.heapUsed
+        rss: completedMetric.memoryUsage.rss - (metric.memoryUsage?.rss ?? 0),
+        heapUsed: completedMetric.memoryUsage.heapUsed - (metric.memoryUsage?.heapUsed ?? 0)
       }
     });
 
@@ -205,7 +206,7 @@ class PerformanceMonitor {
     return {
       status,
       metrics: {
-        averageResponseTime,
+        averageResponseTime: avgResponseTime,
         errorRate,
         requestsPerMinute,
         memoryUsage
@@ -257,7 +258,8 @@ export const databasePerformanceMonitor = () => {
         if (duration !== null) {
           logger.debug('Database operation completed', {
             operation: propertyName,
-            duration: `${duration.toFixed(2)}ms`
+            duration,
+            durationMs: `${duration.toFixed(2)}ms`
           });
         }
         
@@ -267,7 +269,8 @@ export const databasePerformanceMonitor = () => {
         
         logger.logError(error as Error, {
           operation: propertyName,
-          duration: duration ? `${duration.toFixed(2)}ms` : undefined
+          duration: duration ?? undefined,
+          durationMs: duration != null ? `${duration.toFixed(2)}ms` : undefined
         });
         
         throw error;

@@ -68,7 +68,7 @@ Transaction Input → Feature Extraction → ML Model → Risk Score → Decisio
 Install the required dependencies:
 
 ```bash
-npm install @tensorflow/tfjs @tensorflow/tfjs-node node-cron geoip-lite useragent
+npm install @tensorflow/tfjs node-cron geoip-lite useragent
 npm install --save-dev @types/geoip-lite @types/node-cron @types/useragent
 ```
 

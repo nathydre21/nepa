@@ -177,8 +177,8 @@ export const logger = new Logger();
 
 export const requestLogger = (req: Request, res: Response, next: NextFunction) => {
   const start = Date.now();
-  const correlationId = rTracer.id();
-  
+  const correlationId = rTracer.id() as string | undefined;
+
   logger.http('Request started', {
     correlationId,
     method: req.method,
@@ -191,7 +191,7 @@ export const requestLogger = (req: Request, res: Response, next: NextFunction) =
   res.on('finish', () => {
     const duration = Date.now() - start;
     const level = res.statusCode >= 400 ? 'warn' : 'http';
-    
+
     logger[level]('Request completed', {
       correlationId,
       method: req.method,

@@ -92,6 +92,7 @@ model User {
   webhooks               Webhook[]
   auditLogs              AuditLog[]
   blockchainWallets      BlockchainWallet[]
+  fraudCases             FraudCase[]
 
   @@index([email])
   @@index([username])
@@ -522,7 +523,7 @@ model FraudCase {
   resolvedAt            DateTime?
 
   user                  User                  @relation(fields: [userId], references: [id])
-  payment               Payment?              @relation(fields: [transactionId], references: [id])
+  payment               Payment?
 
   @@index([userId])
   @@index([transactionId])

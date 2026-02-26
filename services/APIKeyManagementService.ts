@@ -2,7 +2,7 @@ import Redis from 'ioredis';
 import { Request } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
-import prisma from '../databases/clients/user-service';
+import prisma from '../src/config/prismaClient';
 
 interface APIKey {
   id: string;

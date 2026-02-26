@@ -86,16 +86,17 @@ class AuditClient {
         });
 
         // Setup logging if available
-        if (this.client.$on) {
-          this.client.$on('error', (e: any) => {
+        const client = this.client;
+        if (client?.$on) {
+          client.$on('error', (e: any) => {
             logger.error('Audit database error:', { error: e });
           });
 
-          this.client.$on('warn', (e: any) => {
+          client.$on('warn', (e: any) => {
             logger.warn('Audit database warning:', { warning: e });
           });
         }
-        
+
         logger.info('Audit Prisma client initialized successfully');
       } else {
         throw new Error('No Prisma client available');
@@ -161,7 +162,9 @@ class AuditClient {
       this.isConnected = true;
       logger.info('Connected to audit database');
     } catch (error) {
-      logger.error('Failed to connect to audit database:', { error });
+      logger.error('Failed to connect to audit database:', {
+        error: error instanceof Error ? error : new Error(String(error))
+      });
       throw error;
     }
   }
@@ -174,7 +177,9 @@ class AuditClient {
       this.isConnected = false;
       logger.info('Disconnected from audit database');
     } catch (error) {
-      logger.error('Error disconnecting from audit database:', { error });
+      logger.error('Error disconnecting from audit database:', {
+        error: error instanceof Error ? error : new Error(String(error))
+      });
     }
   }
 
@@ -190,7 +195,9 @@ class AuditClient {
       await this.client.$queryRaw`SELECT 1`;
       return true;
     } catch (error) {
-      logger.error('Audit database health check failed:', { error });
+      logger.error('Audit database health check failed:', {
+        error: error instanceof Error ? error : new Error(String(error))
+      });
       return false;
     }
   }

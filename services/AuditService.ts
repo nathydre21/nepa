@@ -1,6 +1,10 @@
 import auditClient from '../databases/clients/auditClient';
 import { logger } from './logger';
 
+function toError(e: unknown): Error {
+  return e instanceof Error ? e : new Error(String(e));
+}
+
 // Optional imports - will be handled gracefully if not available
 let rTracer: any;
 let uuidv4: any;
@@ -175,7 +179,7 @@ export class AuditService {
                            (rTracer ? rTracer.id() : null) || 
                            uuidv4();
       
-      const auditLog = await auditClient.auditLog.create({
+      const auditLog = await auditClient.auditLog!.create({
         data: {
           correlationId,
           userId: data.context?.userId,
@@ -238,12 +242,12 @@ export class AuditService {
 
     } catch (error) {
       logger.error('Failed to log audit event:', {
-        error,
+        error: toError(error),
         action: data.action,
         resource: data.resource,
         userId: data.context?.userId
       });
-      
+
       // Don't throw - audit logging should not break the main flow
       // But log to application logs for monitoring
     }
@@ -261,7 +265,7 @@ export class AuditService {
                            (rTracer ? rTracer.id() : null) || 
                            uuidv4();
       
-      await auditClient.auditEvent.create({
+      await auditClient.auditEvent!.create({
         data: {
           eventType: data.eventType,
           aggregateId: data.aggregateId,
@@ -276,7 +280,7 @@ export class AuditService {
 
     } catch (error) {
       logger.error('Failed to log audit event:', {
-        error,
+        error: toError(error),
         eventType: data.eventType,
         aggregateId: data.aggregateId,
         userId: context?.userId
@@ -311,13 +315,13 @@ export class AuditService {
       }
 
       const [logs, total] = await Promise.all([
-        auditClient.auditLog.findMany({
+        auditClient.auditLog!.findMany({
           where,
           orderBy: { createdAt: 'desc' },
           take: filters.limit || 100,
           skip: filters.offset || 0
         }),
-        auditClient.auditLog.count({ where })
+        auditClient.auditLog!.count({ where })
       ]);
 
       return {
@@ -327,7 +331,7 @@ export class AuditService {
       };
 
     } catch (error) {
-      logger.error('Failed to search audit logs:', { error });
+      logger.error('Failed to search audit logs:', { error: toError(error) });
       throw new Error('Failed to search audit logs');
     }
   }
@@ -394,7 +398,7 @@ export class AuditService {
 
       // Generate report data
       const [logs, summary] = await Promise.all([
-        auditClient.auditLog.findMany({
+        auditClient.auditLog!.findMany({
           where,
           orderBy: { createdAt: 'desc' }
         }),
@@ -414,7 +418,7 @@ export class AuditService {
       };
 
       // Save report
-      const report = await auditClient.complianceReport.create({
+      const report = await auditClient.complianceReport!.create({
         data: {
           reportType: options.reportType,
           startDate: options.startDate,
@@ -432,7 +436,7 @@ export class AuditService {
       };
 
     } catch (error) {
-      logger.error('Failed to generate compliance report:', error);
+      logger.error('Failed to generate compliance report:', { error: toError(error) });
       throw new Error('Failed to generate compliance report');
     }
   }
@@ -450,7 +454,7 @@ export class AuditService {
         if (endDate) where.createdAt.lte = endDate;
       }
 
-      const activities = await auditClient.auditLog.findMany({
+      const activities = await auditClient.auditLog!.findMany({
         where,
         orderBy: { createdAt: 'desc' },
         take: 1000 // Limit for performance
@@ -470,7 +474,7 @@ export class AuditService {
       }));
 
     } catch (error) {
-      logger.error('Failed to get user activity timeline:', error);
+      logger.error('Failed to get user activity timeline:', { error: toError(error) });
       throw new Error('Failed to get user activity timeline');
     }
   }
@@ -482,7 +486,7 @@ export class AuditService {
     try {
       const cutoffDate = new Date();
       
-      const result = await auditClient.auditLog.deleteMany({
+      const result = await auditClient.auditLog!.deleteMany({
         where: {
           retentionDate: {
             lt: cutoffDate
@@ -495,7 +499,7 @@ export class AuditService {
       return result.count;
 
     } catch (error) {
-      logger.error('Failed to cleanup expired audit logs:', error);
+      logger.error('Failed to cleanup expired audit logs:', { error: toError(error) });
       throw new Error('Failed to cleanup expired audit logs');
     }
   }
@@ -508,7 +512,7 @@ export class AuditService {
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - daysOld);
 
-      const result = await auditClient.auditLog.updateMany({
+      const result = await auditClient.auditLog!.updateMany({
         where: {
           createdAt: {
             lt: cutoffDate
@@ -524,7 +528,7 @@ export class AuditService {
       return result.count;
 
     } catch (error) {
-      logger.error('Failed to archive old audit logs:', error);
+      logger.error('Failed to archive old audit logs:', { error: toError(error) });
       throw new Error('Failed to archive old audit logs');
     }
   }
@@ -532,7 +536,7 @@ export class AuditService {
   // Private helper methods
   private async loadRetentionPolicies(): Promise<void> {
     try {
-      const policies = await auditClient.auditRetentionPolicy.findMany({
+      const policies = await auditClient.auditRetentionPolicy!.findMany({
         where: { isActive: true }
       });
 
@@ -546,7 +550,7 @@ export class AuditService {
       }
 
     } catch (error) {
-      logger.error('Failed to load retention policies:', error);
+      logger.error('Failed to load retention policies:', { error: toError(error) });
       // Set fallback retention period
       this.retentionPolicies.set('default', 90);
     }
@@ -564,7 +568,7 @@ export class AuditService {
     ];
 
     for (const policy of defaultPolicies) {
-      await auditClient.auditRetentionPolicy.upsert({
+      await auditClient.auditRetentionPolicy!.upsert({
         where: { resourceType: policy.resourceType },
         update: { retentionDays: policy.retentionDays },
         create: policy
@@ -591,15 +595,15 @@ export class AuditService {
       uniqueUsers,
       uniqueResources
     ] = await Promise.all([
-      auditClient.auditLog.count({ where }),
-      auditClient.auditLog.count({ where: { ...where, status: AuditStatus.SUCCESS } }),
-      auditClient.auditLog.count({ where: { ...where, status: AuditStatus.FAILURE } }),
-      auditClient.auditLog.findMany({
+      auditClient.auditLog!.count({ where }),
+      auditClient.auditLog!.count({ where: { ...where, status: AuditStatus.SUCCESS } }),
+      auditClient.auditLog!.count({ where: { ...where, status: AuditStatus.FAILURE } }),
+      auditClient.auditLog!.findMany({
         where,
         select: { userId: true },
         distinct: ['userId']
       }),
-      auditClient.auditLog.findMany({
+      auditClient.auditLog!.findMany({
         where,
         select: { resource: true },
         distinct: ['resource']

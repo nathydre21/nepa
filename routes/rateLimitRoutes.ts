@@ -81,11 +81,11 @@ export function setupRateLimitRoutes(app: any) {
   app.get('/api/rate-limit/breach-history', authenticate, getBreachHistoryController);
 
   // Role-specific rate limiting examples
-  app.get('/api/admin/protected', authenticate, roleBasedRateLimiter(UserRole.ADMIN), (req, res) => {
+  app.get('/api/admin/protected', authenticate, roleBasedRateLimiter(UserRole.ADMIN), (req: Request, res: Response) => {
     res.json({ message: 'Admin-only endpoint with role-based rate limiting' });
   });
 
-  app.get('/api/premium/feature', authenticate, roleBasedRateLimiter(), (req, res) => {
+  app.get('/api/premium/feature', authenticate, roleBasedRateLimiter(), (req: Request, res: Response) => {
     res.json({ message: 'Premium feature with enhanced rate limiting' });
   });
 }

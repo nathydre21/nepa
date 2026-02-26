@@ -1071,7 +1071,7 @@ export const updateNotificationPreferences = async (req: Request, res: Response)
  *           type: integer
  *           default: 100
  */
-export const getBreachHistory = async (req: Request, res: Response) => {
+export const getNotificationBreachHistory = async (req: Request, res: Response) => {
   try {
     const { limit = 100, offset = 0 } = req.query;
 

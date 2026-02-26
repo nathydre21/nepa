@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { AnalyticsService } from '../AnalyticsService';
+import { AnalyticsService } from '../services/AnalyticsService';
 
 const analyticsService = new AnalyticsService();
 

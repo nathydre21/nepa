@@ -26,7 +26,8 @@ const baseDefinition = {
 
 const options: swaggerJsdoc.Options = {
   definition: baseDefinition,
-  apis: ['./**/*.ts'],
+  // File paths only (glob can return dirs on some systems and cause EISDIR)
+  apis: ['./app.ts', './routes/*.ts', './controllers/*.ts', './middleware/*.ts', './src/config/swagger.ts'],
 };
 
 export const swaggerSpec = swaggerJsdoc(options);

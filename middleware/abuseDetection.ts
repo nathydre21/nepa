@@ -12,15 +12,19 @@ interface AbuseMetrics {
 
 // Abuse detection and monitoring
 export const abuseDetector = (req: Request, res: Response, next: NextFunction) => {
-  const clientIP = req.ip || req.connection.remoteAddress;
+  const clientIP = req.ip || req.connection?.remoteAddress;
   const userId = (req as any).user?.id || 'anonymous';
   const userAgent = req.get('User-Agent') || '';
   const path = req.path;
   const method = req.method;
-  
+
+  if (!clientIP) {
+    return next();
+  }
+
   const metricsKey = `abuse:${clientIP}:${userId}`;
   const globalKey = 'abuse:global';
-  
+
   // Track request patterns
   redis.multi()
     .hincrby(metricsKey, 'requestCount', 1)
@@ -30,7 +34,7 @@ export const abuseDetector = (req: Request, res: Response, next: NextFunction) =
     .hset(metricsKey, 'method', method)
     .expire(metricsKey, 3600) // Keep metrics for 1 hour
     .exec();
-  
+
   // Check for suspicious patterns
   checkSuspiciousPatterns(clientIP, userId, userAgent, path, method)
     .then((isSuspicious) => {

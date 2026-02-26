@@ -190,8 +190,8 @@ export class FileStorageService {
       progress.bytesUploaded = file.size;
       onProgress?.(progress);
 
-      // Generate preview
-      const preview = await this.generatePreview(file);
+      // Generate preview (Document model has no preview field; use for response or storage elsewhere if needed)
+      await this.generatePreview(file);
 
       // Save metadata to database
       const document = await prisma.document.create({
@@ -202,8 +202,7 @@ export class FileStorageService {
           size: file.size,
           path: path,
           provider: provider,
-          userId: userId,
-          preview: preview
+          userId: userId
         }
       });
 

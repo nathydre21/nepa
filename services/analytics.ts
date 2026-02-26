@@ -60,7 +60,9 @@ class AnalyticsService {
       properties
     });
 
-    this.updateSessionActivity(event.sessionId, userId);
+    if (event.sessionId) {
+      this.updateSessionActivity(event.sessionId, userId);
+    }
   }
 
   trackPageView(url: string, userId?: string, metadata?: Partial<UserEvent['metadata']>): void {

@@ -13,6 +13,7 @@ declare global {
         id: string;
         [key: string]: any;
       };
+      suspicious?: boolean;
     }
   }
 }

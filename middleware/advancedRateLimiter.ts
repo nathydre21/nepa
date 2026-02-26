@@ -1,7 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
-import RedisStore from 'rate-limit-redis';
+import RedisStore, { type RedisReply } from 'rate-limit-redis';
 import Redis from 'ioredis';
+
+const sendCommand = (command: string, ...args: string[]): Promise<RedisReply> =>
+  redis.call(command, ...args) as Promise<RedisReply>;
 import { AdvancedRateLimitService } from '../services/AdvancedRateLimitService';
 import { RateLimitBreach } from '../types/rateLimit';
 import { IPBlockingService } from '../services/IPBlockingService';
@@ -373,7 +376,7 @@ export const userProfileHandler = {
 // Legacy rate limiters for backward compatibility
 export const apiLimiter = rateLimit({
   store: new RedisStore({
-    sendCommand: (...args: string[]) => redis.call(...args),
+    sendCommand,
   }),
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -389,7 +392,7 @@ export const apiLimiter = rateLimit({
 
 export const authLimiter = rateLimit({
   store: new RedisStore({
-    sendCommand: (...args: string[]) => redis.call(...args),
+    sendCommand,
   }),
   windowMs: 15 * 60 * 1000,
   max: 10,
@@ -405,7 +408,7 @@ export const authLimiter = rateLimit({
 
 export const paymentLimiter = rateLimit({
   store: new RedisStore({
-    sendCommand: (...args: string[]) => redis.call(...args),
+    sendCommand,
   }),
   windowMs: 5 * 60 * 1000,
   max: 5,

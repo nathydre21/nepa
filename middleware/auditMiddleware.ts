@@ -112,7 +112,7 @@ export const auditSensitiveOperations = (
         });
 
       } catch (error) {
-        logger.error('Failed to log audit in middleware:', error);
+        logger.error('Failed to log audit in middleware:', { error: error instanceof Error ? error : new Error(String(error)) });
       }
     });
   };
@@ -223,7 +223,7 @@ export const auditRateLimit = async (req: Request, res: Response, next: NextFunc
       context: req.auditContext
     });
   } catch (error) {
-    logger.error('Failed to audit rate limit breach:', error);
+    logger.error('Failed to audit rate limit breach:', { error: error instanceof Error ? error : new Error(String(error)) });
   }
 
   next();
@@ -249,7 +249,7 @@ export const auditSecurityAlert = (alertType: string, severity: AuditSeverity = 
         context: req.auditContext
       });
     } catch (error) {
-      logger.error('Failed to audit security alert:', error);
+      logger.error('Failed to audit security alert:', { error: error instanceof Error ? error : new Error(String(error)) });
     }
 
     next();
@@ -276,7 +276,7 @@ export const auditLoginFailure = async (req: Request, email: string, reason: str
       context: req.auditContext
     });
   } catch (error) {
-    logger.error('Failed to audit login failure:', error);
+    logger.error('Failed to audit login failure:', { error: error instanceof Error ? error : new Error(String(error)) });
   }
 };
 
@@ -299,6 +299,6 @@ export const auditAccountLockout = async (req: Request, userId: string, reason: 
       context: req.auditContext
     });
   } catch (error) {
-    logger.error('Failed to audit account lockout:', error);
+    logger.error('Failed to audit account lockout:', { error: error instanceof Error ? error : new Error(String(error)) });
   }
 };

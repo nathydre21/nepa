@@ -1,22 +1,26 @@
 import express from 'express';
 import swaggerUi from 'swagger-ui-express';
-import { apiLimiter, ddosDetector, checkBlockedIP, ipRestriction, progressiveLimiter } from './middleware/rateLimiter';
-import { configureSecurity } from './middleware/security';
-import { apiKeyAuth } from './middleware/auth';
-import { loggingMiddleware, setupGlobalErrorHandling, errorTracker } from './middleware/logger';
+import { ddosDetector, checkBlockedIP, ipRestriction, progressiveLimiter } from './middleware/rateLimiter';
+import { configureSecurity } from './src/config/security';
+import { apiKeyAuth } from './src/config/auth';
+import { loggingMiddleware, setupGlobalErrorHandling, errorTracker, logger } from './middleware/logger';
 import { errorTracker as abuseDetector } from './middleware/abuseDetection';
-import { captureAuditContext, auditRateLimit, auditSecurityAlert } from './middleware/auditMiddleware';
-import { swaggerSpec } from './swagger';
-import { upload } from './middleware/upload';
+import { captureAuditContext, auditRateLimit } from './middleware/auditMiddleware';
+import { swaggerSpec, getVersionedSwaggerSpec } from './swagger';
+import { upload } from './src/utils/upload';
 import { uploadDocument } from './controllers/DocumentController';
 import { getDashboardData, generateReport, exportData } from './controllers/AnalyticsController';
 import { applyPaymentSecurity, processPayment, getPaymentHistory, validatePayment } from './controllers/PaymentController';
 import { setupRateLimitRoutes } from './routes/rateLimitRoutes';
+import { advancedRateLimiter } from './middleware/advancedRateLimiter';
+import { apiVersioningConfig } from './config/api-versioning';
 import auditRoutes from './routes/auditRoutes';
 import fraudRoutes from './routes/fraudRoutes';
+import cacheRoutes from './routes/cacheRoutes';
 import { auditCleanupService } from './services/AuditCleanupService';
 import { registerAuditHandlers } from './databases/event-patterns/handlers/auditHandlers';
-import { EventBus } from './databases/event-patterns/EventBus';
+import EventBus from './databases/event-patterns/EventBus';
+import { initializeCacheSystem } from './services/cache/CacheInitializer';
 
 // Mock services for now - replace with actual implementations
 const performanceMonitor = {
@@ -211,27 +215,24 @@ app.get('/api/analytics/export', apiKeyAuth, exportData);
 // Initialize audit system
 const initializeAuditSystem = async () => {
   try {
-    // Register audit event handlers
-    const eventBus = EventBus.getInstance();
-    registerAuditHandlers(eventBus);
+    // Register audit event handlers (EventBus default export is the singleton instance)
+    registerAuditHandlers(EventBus);
     
     // Start audit cleanup service
     auditCleanupService.start();
     
     logger.info('Audit system initialized successfully');
   } catch (error) {
-    logger.error('Failed to initialize audit system:', error);
+    logger.error('Failed to initialize audit system:', {
+      error: error instanceof Error ? error : new Error(String(error))
+    });
   }
 };
 
 // Initialize audit system on startup
 initializeAuditSystem();
 
-export default app;
 // Cache Management Routes (Admin only)
 app.use('/api/cache', cacheRoutes);
-
-// Add cache middleware to existing routes for better performance
-// Note: These would be added to existing route definitions in a real implementation
 
 export default app;

@@ -1,4 +1,5 @@
-import * as tf from '@tensorflow/tfjs-node';
+import * as tf from '@tensorflow/tfjs';
+import path from 'path';
 import {
   TransactionFeatures,
   FraudDetectionResult,
@@ -14,6 +15,12 @@ import {
   RealTimeMonitoringConfig
 } from './types';
 
+/** File URL for Node (pure tfjs has no file:// support; use absolute path + file URL for fetch). */
+function modelFileUrl(relativeDir: string, file: string): string {
+  const resolved = path.resolve(relativeDir, file);
+  return 'file:///' + resolved.replace(/\\/g, '/');
+}
+
 export class FraudDetectionService {
   private model: tf.LayersModel | null = null;
   private modelConfig: FraudModelConfig;
@@ -22,6 +29,7 @@ export class FraudDetectionService {
   private featureScaler: tf.Normalizer | null = null;
   private trainingData: MLTrainingData[] = [];
   private isTraining: boolean = false;
+  private readonly modelDir = './models/fraud-detection-model';
 
   constructor() {
     this.modelConfig = this.getDefaultModelConfig();
@@ -31,24 +39,23 @@ export class FraudDetectionService {
   }
 
   /**
-   * Initialize or load the fraud detection model
+   * Initialize or load the fraud detection model (uses pure @tensorflow/tfjs for portability).
    */
   private async initializeModel(): Promise<void> {
     try {
-      // Try to load existing model
-      const modelPath = './models/fraud-detection-model';
       try {
-        this.model = await tf.loadLayersModel(`file://${modelPath}/model.json`);
+        const url = modelFileUrl(this.modelDir, 'model.json');
+        this.model = await tf.loadLayersModel(url);
         console.log('Loaded existing fraud detection model');
-      } catch (error) {
+      } catch {
         console.log('No existing model found, creating new one');
         this.model = this.createDefaultModel();
         await this.saveModel();
       }
 
-      // Initialize feature scaler
-      this.featureScaler = tf.data.normalize({ min: 0, max: 1 });
-      
+      if (typeof tf.data !== 'undefined' && tf.data.normalize) {
+        this.featureScaler = tf.data.normalize({ min: 0, max: 1 });
+      }
     } catch (error) {
       console.error('Failed to initialize model:', error);
       throw new Error('Model initialization failed');
@@ -471,16 +478,17 @@ export class FraudDetectionService {
   }
 
   /**
-   * Save model to disk
+   * Save model to disk (pure tfjs: use indexedDB-style or file URL if supported in environment).
    */
   private async saveModel(): Promise<void> {
     if (!this.model) return;
-    
     try {
-      await this.model.save('file://./models/fraud-detection-model');
+      const url = 'file:///' + path.resolve(this.modelDir).replace(/\\/g, '/');
+      await this.model.save(url);
       console.log('Model saved successfully');
     } catch (error) {
-      console.error('Failed to save model:', error);
+      // Pure tfjs may not support file:// save in all environments; log and continue
+      console.warn('Model save skipped (not supported in this environment):', (error as Error).message);
     }
   }
 

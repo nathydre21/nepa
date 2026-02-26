@@ -27,7 +27,7 @@ class ErrorTracker {
         release: config.release,
         integrations: [
           new Sentry.Integrations.Http({ tracing: true }),
-          new Tracing.Integrations.Express({ app: null }),
+          new Tracing.Integrations.Express({ app: undefined }),
         ],
         beforeSend(event) {
           if (event.exception) {
@@ -76,7 +76,8 @@ class ErrorTracker {
     }
 
     try {
-      const eventId = Sentry.captureMessage(message, level, {
+      const eventId = Sentry.captureMessage(message, {
+        level,
         contexts: context ? { custom: context } : undefined
       });
 

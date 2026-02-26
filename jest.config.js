@@ -13,10 +13,13 @@ module.exports = {
     'src/**/*.{ts,tsx}',
     'controllers/**/*.ts',
     'services/**/*.ts',
+    'routes/**/*.ts',
+    'middleware/**/*.ts',
     '!src/**/*.d.ts',
     '!src/types/**',
     '!**/node_modules/**',
-    '!**/dist/**'
+    '!**/dist/**',
+    '!**/*.config.{ts,js}'
   ],
   coverageDirectory: 'coverage',
   coverageReporters: [
@@ -24,9 +27,17 @@ module.exports = {
     'lcov',
     'html'
   ],
+  coverageThreshold: {
+    global: {
+      branches: 90,
+      functions: 90,
+      lines: 90,
+      statements: 90
+    }
+  },
   setupFilesAfterEnv: ['<rootDir>/tests/setup.ts'],
   testTimeout: 10000,
-  moduleNameMapping: {
+  moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1'
   },
   globalSetup: '<rootDir>/tests/globalSetup.ts',
