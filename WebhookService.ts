@@ -2,6 +2,7 @@ import * as crypto from 'crypto';
 import axios, { AxiosError } from 'axios';
 import { logger } from './logger';
 import prisma from './prismaClient';
+import { databasePoolManager } from './databasePoolManager';
 
 export interface WebhookPayload {
   eventType: string;
@@ -104,20 +105,22 @@ class WebhookService {
     const secret = crypto.randomBytes(32).toString('hex');
 
     try {
-      const webhook = await prisma.webhook.create({
-        data: {
-          userId,
-          url,
-          events,
-          secret,
-          description: options?.description,
-          retryPolicy: options?.retryPolicy || 'EXPONENTIAL',
-          maxRetries: options?.maxRetries || 3,
-          retryDelaySeconds: options?.retryDelaySeconds || 60,
-          timeoutSeconds: options?.timeoutSeconds || 30,
-          headers: options?.headers ? JSON.stringify(options.headers) : null,
-        },
-      });
+      const webhook = await databasePoolManager.executeWithRetry(() => 
+        prisma.webhook.create({
+          data: {
+            userId,
+            url,
+            events,
+            secret,
+            description: options?.description,
+            retryPolicy: options?.retryPolicy || 'EXPONENTIAL',
+            maxRetries: options?.maxRetries || 3,
+            retryDelaySeconds: options?.retryDelaySeconds || 60,
+            timeoutSeconds: options?.timeoutSeconds || 30,
+            headers: options?.headers ? JSON.stringify(options.headers) : null,
+          },
+        })
+      );
 
       await this.logWebhookAction(webhook.id, 'CREATED', 'Webhook registered successfully');
       logger.info(`Webhook registered: ${webhook.id} for user: ${userId}`);
@@ -149,10 +152,12 @@ class WebhookService {
         new URL(updates.url);
       }
 
-      const webhook = await prisma.webhook.update({
-        where: { id: webhookId },
-        data: updates,
-      });
+      const webhook = await databasePoolManager.executeWithRetry(() =>
+        prisma.webhook.update({
+          where: { id: webhookId },
+          data: updates,
+        })
+      );
 
       await this.logWebhookAction(webhookId, 'UPDATED', `Webhook updated: ${JSON.stringify(updates)}`);
       logger.info(`Webhook updated: ${webhookId}`);
@@ -169,9 +174,11 @@ class WebhookService {
    */
   async deleteWebhook(webhookId: string): Promise<void> {
     try {
-      await prisma.webhook.delete({
-        where: { id: webhookId },
-      });
+      await databasePoolManager.executeWithRetry(() =>
+        prisma.webhook.delete({
+          where: { id: webhookId },
+        })
+      );
 
       await this.logWebhookAction(webhookId, 'DELETED', 'Webhook deleted');
       logger.info(`Webhook deleted: ${webhookId}`);
@@ -186,10 +193,12 @@ class WebhookService {
    */
   async getUserWebhooks(userId: string): Promise<Webhook[]> {
     try {
-      return await prisma.webhook.findMany({
-        where: { userId },
-        orderBy: { createdAt: 'desc' },
-      });
+      return await databasePoolManager.executeWithRetry(() =>
+        prisma.webhook.findMany({
+          where: { userId },
+          orderBy: { createdAt: 'desc' },
+        })
+      );
     } catch (error) {
       logger.error(`Failed to fetch user webhooks: ${error}`);
       throw error;
@@ -202,14 +211,16 @@ class WebhookService {
   async triggerWebhook(eventType: string, payload: any): Promise<void> {
     try {
       // Find all active webhooks listening to this event
-      const webhooks = await prisma.webhook.findMany({
-        where: {
-          isActive: true,
-          events: {
-            has: eventType,
+      const webhooks = await databasePoolManager.executeWithRetry(() =>
+        prisma.webhook.findMany({
+          where: {
+            isActive: true,
+            events: {
+              has: eventType,
+            },
           },
-        },
-      });
+        })
+      );
 
       if (webhooks.length === 0) {
         logger.info(`No webhooks registered for event: ${eventType}`);
@@ -240,15 +251,17 @@ class WebhookService {
       const payloadString = JSON.stringify(payload);
       const signature = WebhookService.generateSignature(payloadString, webhook.secret);
 
-      const event = await prisma.webhookEvent.create({
-        data: {
-          webhookId: webhook.id,
-          eventType: payload.eventType,
-          payload,
-          deliveryUrl: webhook.url,
-          status: 'PENDING',
-        },
-      });
+      const event = await databasePoolManager.executeWithRetry(() =>
+        prisma.webhookEvent.create({
+          data: {
+            webhookId: webhook.id,
+            eventType: payload.eventType,
+            payload,
+            deliveryUrl: webhook.url,
+            status: 'PENDING',
+          },
+        })
+      );
 
       // Attempt delivery
       await this.attemptWebhookDelivery(webhook, event, payload, signature, 0);

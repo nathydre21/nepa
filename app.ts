@@ -6,6 +6,7 @@ import { apiKeyAuth } from './middleware/auth';
 import { authenticate, authorize, optionalAuth } from './middleware/authentication';
 import { loggingMiddleware, setupGlobalErrorHandling, errorTracker } from './middleware/logger';
 import { errorTracker as abuseDetector } from './middleware/abuseDetection';
+import { databaseHealthCheck, getDatabaseHealth } from './middleware/databaseHealthCheck';
 import { swaggerSpec } from './swagger';
 import { upload } from './middleware/upload';
 import { uploadDocument } from './controllers/DocumentController';
@@ -62,9 +63,10 @@ app.use(abuseDetector);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // 9. Enhanced Health Check
-app.get('/health', (req, res) => {
+app.get('/health', databaseHealthCheck, (req, res) => {
   const healthStatus = performanceMonitor.getHealthStatus();
   const memoryUsage = performanceMonitor.getMemoryUsage();
+  const dbStats = (req as any).dbPoolStats;
   
   res.status(200).json({
     status: 'UP',
@@ -76,12 +78,16 @@ app.get('/health', (req, res) => {
       total: memoryUsage.heapTotal,
       external: memoryUsage.external
     },
+    database: dbStats,
     analytics: {
       totalEvents: analyticsService.getAnalyticsData().userEvents.length,
       activeUsers: analyticsService.getAnalyticsData().activeUsers
     }
   });
 });
+
+// Database health check endpoint
+app.get('/health/database', getDatabaseHealth);
 
 // 10. Monitoring endpoints
 app.get('/api/monitoring/metrics', apiKeyAuth, (req, res) => {
