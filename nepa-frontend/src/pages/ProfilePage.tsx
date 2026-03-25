@@ -120,10 +120,10 @@ export const ProfilePage: React.FC = () => {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
+          <h2 className="text-2xl font-semibold text-foreground mb-2">
             Profile Not Found
           </h2>
-          <p className="text-gray-600 dark:text-gray-400">
+          <p className="text-muted-foreground">
             Unable to load your profile information.
           </p>
         </div>
@@ -133,15 +133,15 @@ export const ProfilePage: React.FC = () => {
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg">
-        <div className="border-b border-gray-200 dark:border-gray-700">
+      <div className="bg-card rounded-lg shadow-lg">
+        <div className="border-b border-border">
           <nav className="flex space-x-8 px-6" aria-label="Tabs">
             <button
               onClick={() => setActiveTab('view')}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'view'
-                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
               }`}
             >
               View Profile
@@ -150,8 +150,8 @@ export const ProfilePage: React.FC = () => {
               onClick={() => setActiveTab('customize')}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'customize'
-                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
               }`}
             >
               Customize

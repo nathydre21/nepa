@@ -27,7 +27,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const [theme, setTheme] = useState<Theme>(() => {
     // Check localStorage first, then system preference
     if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('theme') as Theme;
+      const stored = localStorage.getItem('nepa-theme') as Theme;
       if (stored && ['light', 'dark', 'system'].includes(stored)) {
         return stored;
       }
@@ -60,7 +60,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   useEffect(() => {
     // Update localStorage
     if (typeof window !== 'undefined') {
-      localStorage.setItem('theme', theme);
+      localStorage.setItem('nepa-theme', theme);
     }
 
     // Update document class for CSS

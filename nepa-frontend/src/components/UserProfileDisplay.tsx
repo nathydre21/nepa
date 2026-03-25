@@ -71,42 +71,42 @@ export const UserProfileDisplay: React.FC<UserProfileDisplayProps> = ({ profile 
           </span>
         </div>
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+          <h2 className="text-2xl font-bold text-foreground">
             User Profile
           </h2>
-          <p className="text-gray-600 dark:text-gray-400">
+          <p className="text-muted-foreground">
             Member since {formatDate(profile.createdAt)}
           </p>
         </div>
       </div>
 
       {/* Personal Information Section */}
-      <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-6">
-        <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">
+      <div className="bg-muted rounded-lg p-6">
+        <h3 className="text-lg font-medium text-foreground mb-4">
           Personal Information
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Bio</dt>
-            <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
+            <dt className="text-sm font-medium text-muted-foreground">Bio</dt>
+            <dd className="mt-1 text-sm text-foreground">
               {profile.bio || 'No bio provided'}
             </dd>
           </div>
           <div>
-            <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Location</dt>
-            <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
+            <dt className="text-sm font-medium text-muted-foreground">Location</dt>
+            <dd className="mt-1 text-sm text-foreground">
               {profile.location || 'No location provided'}
             </dd>
           </div>
           <div>
-            <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Website</dt>
-            <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
+            <dt className="text-sm font-medium text-muted-foreground">Website</dt>
+            <dd className="mt-1 text-sm text-foreground">
               {profile.website ? (
                 <a
                   href={profile.website}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                  className="text-primary hover:text-primary/80"
                 >
                   {profile.website}
                 </a>
