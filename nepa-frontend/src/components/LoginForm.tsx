@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { Loading } from './Loading';
 
 interface LoginFormProps {
   onToggleMode: () => void;
@@ -132,9 +133,16 @@ const LoginForm: React.FC<LoginFormProps> = ({ onToggleMode }) => {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
           >
-            {isLoading ? 'Signing In...' : 'Sign In'}
+            {isLoading ? (
+              <>
+                <Loading size="sm" />
+                <span className="ml-2">Signing In...</span>
+              </>
+            ) : (
+              'Sign In'
+            )}
           </button>
         </form>
 
@@ -157,7 +165,14 @@ const LoginForm: React.FC<LoginFormProps> = ({ onToggleMode }) => {
             <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
               <path d="M10 2a8 8 0 100 16 8 8 0 000-16zM8 7a2 2 0 11-4 0 2 2 0 014 0zm8 0a2 2 0 11-4 0 2 2 0 014 0zm-8 6a2 2 0 11-4 0 2 2 0 014 0zm8 0a2 2 0 11-4 0 2 2 0 014 0z"/>
             </svg>
-            <span>{isLoading ? 'Connecting...' : 'Connect Wallet'}</span>
+            {isLoading ? (
+              <>
+                <Loading size="sm" />
+                <span>Connecting...</span>
+              </>
+            ) : (
+              <span>Connect Wallet</span>
+            )}
           </button>
         </div>
 

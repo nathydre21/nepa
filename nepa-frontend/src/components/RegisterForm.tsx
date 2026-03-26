@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { Loading } from './Loading';
 
 interface RegisterFormProps {
   onToggleMode: () => void;
@@ -217,9 +218,16 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
           >
-            {isLoading ? 'Creating Account...' : 'Create Account'}
+            {isLoading ? (
+              <>
+                <Loading size="sm" />
+                <span className="ml-2">Creating Account...</span>
+              </>
+            ) : (
+              'Create Account'
+            )}
           </button>
         </form>
 

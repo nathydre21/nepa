@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
+import { Loading } from './Loading';
 
 interface YieldData {
   date: string;
@@ -177,7 +178,7 @@ const YieldDashboard: React.FC = () => {
   if (loading && yieldData.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-lg">Loading yield data...</div>
+        <Loading size="lg" label="Loading yield data..." />
       </div>
     );
   }

@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { format, subDays, startOfMonth, endOfMonth } from 'date-fns';
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { Loading } from './Loading';
 
 interface Payment {
   id: string;
@@ -36,6 +37,19 @@ const Dashboard: React.FC = () => {
   const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month' | 'year'>('month');
   const [paymentFilter, setPaymentFilter] = useState<'all' | 'completed' | 'pending' | 'failed'>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  // Simulate data fetching
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      // Simulate API call delay
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      setLoading(false);
+    };
+    
+    fetchData();
+  }, []);
 
   // Mock data - in real app, this would come from API
   const payments: Payment[] = useMemo(() => [
@@ -99,6 +113,14 @@ const Dashboard: React.FC = () => {
     : 0;
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loading size="lg" label="Loading dashboard data..." />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-4 md:p-6">
