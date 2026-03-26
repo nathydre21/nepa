@@ -12,7 +12,7 @@ import { upload } from './middleware/upload';
 import { uploadDocument } from './controllers/DocumentController';
 import { getDashboardData, generateReport, exportData } from './controllers/AnalyticsController';
 import { applyPaymentSecurity, processPayment, getPaymentHistory, validatePayment } from './controllers/PaymentController';
-
+import { rssController } from './RssController';
 
 const app = express();
 
@@ -209,6 +209,71 @@ app.post('/api/analytics/reports', apiKeyAuth, generateReport);
 // Export Route
 app.get('/api/analytics/export', apiKeyAuth, exportData);
 
+// RSS Feed Routes (publicly accessible)
+/**
+ * @openapi
+ * /api/rss:
+ *   get:
+ *     summary: Get available RSS feeds
+ *     responses:
+ *       200:
+ *         description: Available RSS feeds
+ */
+app.get('/api/rss', rssController.getFeedInfo.bind(rssController));
 
+/**
+ * @openapi
+ * /api/rss/bills:
+ *   get:
+ *     summary: Get RSS feed for recent bills
+ *     responses:
+ *       200:
+ *         description: RSS feed for bills
+ */
+app.get('/api/rss/bills', rssController.getBillsFeed.bind(rssController));
+
+/**
+ * @openapi
+ * /api/rss/payments:
+ *   get:
+ *     summary: Get RSS feed for recent payments
+ *     responses:
+ *       200:
+ *         description: RSS feed for payments
+ */
+app.get('/api/rss/payments', rssController.getPaymentsFeed.bind(rssController));
+
+/**
+ * @openapi
+ * /api/rss/users:
+ *   get:
+ *     summary: Get RSS feed for new user registrations
+ *     responses:
+ *       200:
+ *         description: RSS feed for users
+ */
+app.get('/api/rss/users', rssController.getUsersFeed.bind(rssController));
+
+/**
+ * @openapi
+ * /api/rss/reports:
+ *   get:
+ *     summary: Get RSS feed for recent reports
+ *     responses:
+ *       200:
+ *         description: RSS feed for reports
+ */
+app.get('/api/rss/reports', rssController.getReportsFeed.bind(rssController));
+
+/**
+ * @openapi
+ * /api/rss/activity:
+ *   get:
+ *     summary: Get combined RSS feed for all activity
+ *     responses:
+ *       200:
+ *         description: Combined RSS feed
+ */
+app.get('/api/rss/activity', rssController.getCombinedFeed.bind(rssController));
 
 export default app;
