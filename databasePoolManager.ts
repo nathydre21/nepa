@@ -39,20 +39,20 @@ export class DatabasePoolManager {
    * Start monitoring database connection pool health
    */
   private startHealthMonitoring(): void {
-    // Check pool health every 15 seconds (more frequent monitoring)
+    // Check pool health every 30 seconds (reduced frequency to prevent connection overhead)
     this.healthCheckInterval = setInterval(async () => {
       await this.checkPoolHealth();
-    }, 15000);
+    }, 30000);
   }
 
   /**
    * Start collecting detailed pool metrics
    */
   private startMetricsCollection(): void {
-    // Collect metrics every 30 seconds
+    // Collect metrics every 60 seconds (reduced frequency for better performance)
     this.metricsInterval = setInterval(async () => {
       await this.collectPoolMetrics();
-    }, 30000);
+    }, 60000);
   }
 
   /**
@@ -80,12 +80,12 @@ export class DatabasePoolManager {
       this.connectionMetrics.maxResponseTime = Math.max(...this.responseTimeHistory);
       
       // Log slow queries and potential pool issues
-      if (responseTime > 2000) { // Reduced threshold from 1000ms
+      if (responseTime > 5000) { // Increased threshold to reduce false positives
         logger.warn(`Slow database query detected - Response: ${responseTime}ms, Avg: ${this.connectionMetrics.averageResponseTime}ms, Max: ${this.connectionMetrics.maxResponseTime}ms`);
       }
 
       // Check for pool exhaustion indicators
-      if (responseTime > 5000 || this.connectionMetrics.averageResponseTime > 3000) {
+      if (responseTime > 10000 || this.connectionMetrics.averageResponseTime > 8000) {
         this.connectionMetrics.poolExhaustionEvents++;
         logger.error(`Potential database pool exhaustion detected - Response: ${responseTime}ms, Avg: ${this.connectionMetrics.averageResponseTime}ms, Events: ${this.connectionMetrics.poolExhaustionEvents}`);
       }
@@ -160,8 +160,8 @@ export class DatabasePoolManager {
    */
   public async executeWithRetry<T>(
     operation: () => Promise<T>,
-    maxRetries: number = 5, // Increased from 3
-    retryDelay: number = 2000 // Increased from 1000
+    maxRetries: number = 3, // Reduced from 5 to prevent connection buildup
+    retryDelay: number = 3000 // Increased from 2000 for better recovery time
   ): Promise<T> {
     let lastError: Error;
     
@@ -215,7 +215,7 @@ export class DatabasePoolManager {
    */
   public async batchOperations<T>(
     operations: Array<() => Promise<T>>,
-    batchSize: number = 5 // Reduced from 10 to reduce connection pressure
+    batchSize: number = 3 // Further reduced from 5 to minimize connection pressure
   ): Promise<T[]> {
     const results: T[] = [];
     
@@ -229,9 +229,9 @@ export class DatabasePoolManager {
         );
         results.push(...batchResults);
         
-        // Add small delay between batches to prevent pool exhaustion
+        // Add delay between batches to prevent pool exhaustion
         if (i + batchSize < operations.length) {
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise(resolve => setTimeout(resolve, 200)); // Increased from 100ms
         }
       } catch (error) {
         logger.error(`Batch operation failed - Error: ${error instanceof Error ? error.message : 'Unknown error'}, Batch Size: ${batch.length}, Batch Index: ${Math.floor(i / batchSize)}, Remaining: ${operations.length - i}`);

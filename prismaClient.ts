@@ -14,24 +14,29 @@ try {
     },
     // Connection pool settings
     log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
-    // Enhanced connection timeout and retry settings
+    // Enhanced connection pool settings for heavy load
     __internal: {
       engine: {
         // Optimized connection pool limits for heavy load
-        connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT || '50'), // Increased from 20
-        poolTimeout: parseInt(process.env.DB_POOL_TIMEOUT || '30000'), // Increased from 10000ms
+        connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT || '100'), // Increased from 50
+        poolTimeout: parseInt(process.env.DB_POOL_TIMEOUT || '45000'), // Increased from 30000ms
         // Connection lifecycle management
-        connectionTimeoutMillis: parseInt(process.env.DB_CONNECTION_TIMEOUT || '60000'), // 60 seconds
-        idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT || '30000'), // 30 seconds
+        connectionTimeoutMillis: parseInt(process.env.DB_CONNECTION_TIMEOUT || '90000'), // 90 seconds
+        idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT || '45000'), // 45 seconds
         // Enhanced retry configuration
-        retryAttempts: parseInt(process.env.DB_RETRY_ATTEMPTS || '5'), // Increased from 3
-        retryDelay: parseInt(process.env.DB_RETRY_DELAY || '2000'), // Increased from 1000ms
+        retryAttempts: parseInt(process.env.DB_RETRY_ATTEMPTS || '3'), // Reduced from 5
+        retryDelay: parseInt(process.env.DB_RETRY_DELAY || '3000'), // Increased from 2000ms
         // Connection validation
         validateConnections: true,
         // Pool exhaustion handling
-        maxOverflow: parseInt(process.env.DB_MAX_OVERFLOW || '10'), // Allow temporary overflow
-        evictionRunIntervalMillis: parseInt(process.env.DB_EVICTION_INTERVAL || '5000'), // Check every 5 seconds
-        minEvictableIdleTimeMillis: parseInt(process.env.DB_MIN_EVICTABLE_IDLE || '10000'), // Evict after 10 seconds idle
+        maxOverflow: parseInt(process.env.DB_MAX_OVERFLOW || '20'), // Increased from 10
+        evictionRunIntervalMillis: parseInt(process.env.DB_EVICTION_INTERVAL || '10000'), // Check every 10 seconds
+        minEvictableIdleTimeMillis: parseInt(process.env.DB_MIN_EVICTABLE_IDLE || '15000'), // Evict after 15 seconds idle
+        // Additional pool optimization settings
+        acquireTimeoutMillis: parseInt(process.env.DB_ACQUIRE_TIMEOUT || '60000'), // 60 seconds to acquire connection
+        reapIntervalMillis: parseInt(process.env.DB_REAP_INTERVAL || '30000'), // Check every 30 seconds
+        createTimeoutMillis: parseInt(process.env.DB_CREATE_TIMEOUT || '30000'), // 30 seconds to create connection
+        destroyTimeoutMillis: parseInt(process.env.DB_DESTROY_TIMEOUT || '5000'), // 5 seconds to destroy connection
       }
     }
   };
