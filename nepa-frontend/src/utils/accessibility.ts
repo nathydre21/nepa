@@ -251,3 +251,124 @@ export const prefersReducedMotion = (): boolean => {
 export const prefersHighContrast = (): boolean => {
   return window.matchMedia('(prefers-contrast: high)').matches;
 };
+
+/**
+ * Empty state specific accessibility utilities
+ */
+export const emptyStateAccessibility = {
+  /**
+   * Generate appropriate ARIA labels for empty states
+   */
+  getAriaLabel: (type: string, entity?: string): string => {
+    const labels = {
+      'no-data': entity ? `No ${entity} available` : 'No data available',
+      'no-results': 'No search results found',
+      'no-connection': 'Connection to server lost',
+      'error': 'An error occurred',
+      'loading': 'Loading content',
+      'custom': 'Information'
+    };
+    return labels[type as keyof typeof labels] || 'Information';
+  },
+
+  /**
+   * Generate descriptive messages for screen readers
+   */
+  getDescriptiveMessage: (type: string, details?: {
+    entity?: string;
+    searchTerm?: string;
+    hasFilters?: boolean;
+    error?: string;
+  }): string => {
+    switch (type) {
+      case 'no-data':
+        return details?.entity 
+          ? `You have no ${details.entity} yet. Consider adding your first ${details.entity.slice(0, -1)} to get started.`
+          : 'No data is currently available.';
+      
+      case 'no-results':
+        if (details?.searchTerm && details?.hasFilters) {
+          return `No results found for "${details.searchTerm}" with current filters applied.`;
+        } else if (details?.searchTerm) {
+          return `No results found for "${details.searchTerm}". Try different search terms.`;
+        } else if (details?.hasFilters) {
+          return 'No items match your current filters. Try adjusting or clearing your filters.';
+        }
+        return 'No results found. Try adjusting your search or filters.';
+      
+      case 'no-connection':
+        return details?.error 
+          ? `Connection error: ${details.error}. Please check your internet connection and try again.`
+          : 'Unable to connect to the server. Please check your internet connection and try again.';
+      
+      case 'error':
+        return details?.error 
+          ? `An error occurred: ${details.error}. Please try again or contact support if the problem persists.`
+          : 'An unexpected error occurred. Please try again.';
+      
+      case 'loading':
+        return 'Content is currently loading. Please wait.';
+      
+      default:
+        return 'Information';
+    }
+  },
+
+  /**
+   * Get appropriate role for empty state
+   */
+  getRole: (type: string): 'status' | 'alert' | 'region' => {
+    const roles = {
+      'no-data': 'status',
+      'no-results': 'status',
+      'no-connection': 'alert',
+      'error': 'alert',
+      'loading': 'status',
+      'custom': 'region'
+    };
+    return roles[type as keyof typeof roles] || 'status';
+  },
+
+  /**
+   * Get appropriate aria-live setting
+   */
+  getAriaLive: (type: string): 'polite' | 'assertive' => {
+    const liveSettings = {
+      'no-data': 'polite',
+      'no-results': 'polite',
+      'no-connection': 'assertive',
+      'error': 'assertive',
+      'loading': 'polite',
+      'custom': 'polite'
+    };
+    return liveSettings[type as keyof typeof liveSettings] || 'polite';
+  },
+
+  /**
+   * Announce empty state changes to screen readers
+   */
+  announceEmptyState: (type: string, details?: {
+    entity?: string;
+    searchTerm?: string;
+    hasFilters?: boolean;
+    error?: string;
+  }) => {
+    const message = emptyStateAccessibility.getDescriptiveMessage(type, details);
+    const priority = emptyStateAccessibility.getAriaLive(type);
+    announceToScreenReader(message, priority);
+  },
+
+  /**
+   * Generate keyboard navigation hints for empty state actions
+   */
+  getKeyboardHint: (hasPrimaryAction: boolean, hasSecondaryAction: boolean): string => {
+    if (hasPrimaryAction && hasSecondaryAction) {
+      return 'Press Tab to navigate to available actions, or press Enter to activate the primary action.';
+    } else if (hasPrimaryAction) {
+      return 'Press Tab to navigate to the action button, or press Enter to activate it.';
+    } else if (hasSecondaryAction) {
+      return 'Press Tab to navigate to the action button.';
+    }
+    return 'Press Tab to continue navigating the page.';
+  }
+};

@@ -3,6 +3,7 @@
 @tailwind utilities;
 
 @import './styles/theme.css';
+@import './styles/empty-states.css';
 
 :root {
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;

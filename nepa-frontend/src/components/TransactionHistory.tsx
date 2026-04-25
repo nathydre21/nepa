@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Transaction, TransactionHistory, TransactionFilters, PaymentStatus } from '../types';
 import TransactionService from '../services/transactionService';
+import { ListEmptyState } from './EmptyStateVariants';
 
 interface Props {
   className?: string;
@@ -104,13 +105,22 @@ export const TransactionHistoryComponent: React.FC<Props> = ({ className = '' })
     setFilters({});
   };
 
+  const hasActiveFilters = () => {
+    return Object.keys(filters).some(key => {
+      const value = filters[key as keyof TransactionFilters];
+      return value !== undefined && value !== '' && value !== 1; // page 1 is default
+    });
+  };
+
   const filteredTransactions = useMemo(() => transactions, [transactions]);
 
   if (loading && transactions.length === 0) {
     return (
-      <div className={`flex justify-center items-center py-12 ${className}`}>
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-        <span className="ml-3 text-gray-600">Loading transactions...</span>
+      <div className={className}>
+        <ListEmptyState
+          listType="transactions"
+          state="loading"
+        />
       </div>
     );
   }
@@ -268,10 +278,19 @@ export const TransactionHistoryComponent: React.FC<Props> = ({ className = '' })
 
       {/* Transactions List */}
       {filteredTransactions.length === 0 && !loading ? (
-        <div className="text-center py-12">
-          <div className="text-gray-500 text-lg">No transactions found</div>
-          <p className="text-gray-400 mt-2">Try adjusting your filters or search terms</p>
-        </div>
+        <ListEmptyState
+          listType="transactions"
+          state={hasActiveFilters() ? 'no-results' : 'no-data'}
+          hasFilters={hasActiveFilters()}
+          onClear={clearFilters}
+          primaryAction={{
+            label: 'Make a Payment',
+            onClick: () => {
+              // Navigate to payment form or open payment modal
+              window.location.href = '/payment';
+            }
+          }}
+        />
       ) : (
         <div className="bg-white rounded-lg shadow overflow-hidden">
           <div className="overflow-x-auto">
