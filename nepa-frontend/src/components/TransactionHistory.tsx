@@ -4,6 +4,7 @@ import TransactionService from '../services/transactionService';
 import { ListEmptyState } from './EmptyStateVariants';
 import { LoadingSpinner, SkeletonTable, LoadingButton } from './loading/index';
 import { useLoading } from '../contexts/LoadingContext';
+import { IconTooltip, InfoTooltip, WarningTooltip } from './tooltip';
 
 interface Props {
   className?: string;
@@ -139,20 +140,24 @@ export const TransactionHistoryComponent: React.FC<Props> = ({ className = '' })
         </div>
         
         <div className="flex gap-3">
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            {showFilters ? 'Hide Filters' : 'Show Filters'}
-          </button>
+          <InfoTooltip content="Toggle transaction filters to narrow down your search results">
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              {showFilters ? 'Hide Filters' : 'Show Filters'}
+            </button>
+          </InfoTooltip>
           
-          <button
-            onClick={handleExportCSV}
-            disabled={loading || transactions.length === 0}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 transition-colors"
-          >
-            Export CSV
-          </button>
+          <InfoTooltip content="Export your transaction history as a CSV file for offline analysis">
+            <button
+              onClick={handleExportCSV}
+              disabled={loading || transactions.length === 0}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 transition-colors"
+            >
+              Export CSV
+            </button>
+          </InfoTooltip>
         </div>
       </div>
 
