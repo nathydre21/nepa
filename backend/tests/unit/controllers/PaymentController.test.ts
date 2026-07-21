@@ -1,9 +1,50 @@
 import { Request, Response } from 'express';
-import { processPayment, getPaymentHistory, validatePayment } from '../../controllers/PaymentController';
-import { BillingService } from '../../BillingService';
-import { mockRequest, mockResponse, createMockAuth } from '../mocks';
+import { mockRequest, mockResponse, createMockAuth } from '../../mocks';
 
-jest.mock('../../BillingService');
+// Mock NotificationService with a proper constructor to support `new NotificationService()` calls
+jest.mock('../../../services/NotificationService', () => ({
+  NotificationService: jest.fn().mockImplementation(() => ({
+    sendSystemAlert: jest.fn(),
+    sendPaymentConfirmed: jest.fn(),
+    sendBillCreated: jest.fn(),
+    sendBillOverdue: jest.fn(),
+  })),
+}));
+
+jest.mock('../../../BillingService');
+
+// Mock stellar-sdk to avoid constructor issues at module load
+jest.mock('stellar-sdk', () => ({
+  Server: jest.fn(),
+  TransactionBuilder: jest.fn(),
+  Networks: { TESTNET: 'testnet' },
+  BASE_FEE: '100',
+  Asset: { native: jest.fn() },
+  Transaction: jest.fn(),
+}));
+
+// Mock the rate limiter and abuse detection middleware
+jest.mock('../../../middleware/rateLimiter', () => ({
+  paymentLimiter: jest.fn((_req: any, _res: any, next: any) => next()),
+  transactionLimiter: jest.fn((_req: any, _res: any, next: any) => next()),
+}));
+
+jest.mock('../../../middleware/abuseDetection', () => ({
+  abuseDetector: jest.fn((_req: any, _res: any, next: any) => next()),
+}));
+
+jest.mock('../../../middleware/captcha', () => ({
+  conditionalCaptcha: jest.fn((_req: any, _res: any, next: any) => next()),
+}));
+
+jest.mock('../../../middleware/cache', () => ({
+  invalidateUserCache: jest.fn(),
+  invalidateCacheByPattern: jest.fn(),
+}));
+
+// Now import the controller and dependencies
+import { processPayment, getPaymentHistory, validatePayment } from '../../../controllers/PaymentController';
+import { BillingService } from '../../../BillingService';
 
 const MockedBillingService = BillingService as jest.MockedClass<typeof BillingService>;
 
@@ -34,13 +75,13 @@ describe('PaymentController', () => {
     it('should process payment successfully', async () => {
       req.body = validPaymentData;
       (req as any).user = createMockAuth('user-123');
-      
+
       const mockPaymentResult = {
         id: 'payment-123',
         status: 'COMPLETED',
         transactionId: 'txn-123'
       };
-      
+
       mockBillingService.processPayment.mockResolvedValue(mockPaymentResult);
 
       await processPayment(req, res);
@@ -149,7 +190,7 @@ describe('PaymentController', () => {
     it('should handle payment processing errors', async () => {
       req.body = validPaymentData;
       (req as any).user = createMockAuth('user-123');
-      
+
       mockBillingService.processPayment.mockRejectedValue(new Error('Payment gateway error'));
 
       await processPayment(req, res);
@@ -166,7 +207,7 @@ describe('PaymentController', () => {
     it('should return payment history successfully', async () => {
       (req as any).user = createMockAuth('user-123');
       req.query = { limit: '5', offset: '10' };
-      
+
       const mockPaymentHistory = [
         {
           id: 'payment-1',
@@ -181,7 +222,7 @@ describe('PaymentController', () => {
           createdAt: new Date()
         }
       ];
-      
+
       mockBillingService.getPaymentHistory.mockResolvedValue(mockPaymentHistory);
 
       await getPaymentHistory(req, res);
@@ -197,8 +238,8 @@ describe('PaymentController', () => {
     it('should use default limit and offset values', async () => {
       (req as any).user = createMockAuth('user-123');
       req.query = {}; // No limit or offset provided
-      
-      const mockPaymentHistory = [];
+
+      const mockPaymentHistory: any[] = [];
       mockBillingService.getPaymentHistory.mockResolvedValue(mockPaymentHistory);
 
       await getPaymentHistory(req, res);
@@ -222,7 +263,7 @@ describe('PaymentController', () => {
     it('should handle payment history retrieval errors', async () => {
       (req as any).user = createMockAuth('user-123');
       req.query = { limit: '5', offset: '10' };
-      
+
       mockBillingService.getPaymentHistory.mockRejectedValue(new Error('Database error'));
 
       await getPaymentHistory(req, res);
@@ -252,7 +293,7 @@ describe('PaymentController', () => {
     it('should validate payment data successfully', async () => {
       req.body = validValidationData;
       (req as any).user = createMockAuth('user-123');
-      
+
       mockBillingService.getBill.mockResolvedValue(mockBill);
 
       await validatePayment(req, res);
@@ -285,7 +326,7 @@ describe('PaymentController', () => {
     it('should return error for non-existent bill', async () => {
       req.body = validValidationData;
       (req as any).user = createMockAuth('user-123');
-      
+
       mockBillingService.getBill.mockResolvedValue(null);
 
       await validatePayment(req, res);
@@ -300,12 +341,12 @@ describe('PaymentController', () => {
     it('should return error for bill belonging to different user', async () => {
       req.body = validValidationData;
       (req as any).user = createMockAuth('user-456'); // Different user
-      
+
       const billForDifferentUser = {
         ...mockBill,
         userId: 'user-789' // Yet another user
       };
-      
+
       mockBillingService.getBill.mockResolvedValue(billForDifferentUser);
 
       await validatePayment(req, res);
@@ -323,7 +364,7 @@ describe('PaymentController', () => {
         amount: 0
       };
       (req as any).user = createMockAuth('user-123');
-      
+
       mockBillingService.getBill.mockResolvedValue(mockBill);
 
       await validatePayment(req, res);
@@ -341,7 +382,7 @@ describe('PaymentController', () => {
         amount: -50
       };
       (req as any).user = createMockAuth('user-123');
-      
+
       mockBillingService.getBill.mockResolvedValue(mockBill);
 
       await validatePayment(req, res);
@@ -359,7 +400,7 @@ describe('PaymentController', () => {
         amount: 200 // More than bill amount + late fee
       };
       (req as any).user = createMockAuth('user-123');
-      
+
       mockBillingService.getBill.mockResolvedValue(mockBill);
 
       await validatePayment(req, res);
@@ -374,7 +415,7 @@ describe('PaymentController', () => {
     it('should handle validation errors gracefully', async () => {
       req.body = validValidationData;
       (req as any).user = createMockAuth('user-123');
-      
+
       mockBillingService.getBill.mockRejectedValue(new Error('Database error'));
 
       await validatePayment(req, res);

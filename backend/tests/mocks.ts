@@ -33,6 +33,7 @@ export const mockNext = (): NextFunction => {
 
 export const createMockAuth = (userId: string, role: string = 'USER') => {
   return {
+    id: userId,
     userId,
     role,
     email: 'test@example.com',

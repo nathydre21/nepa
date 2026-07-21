@@ -16,7 +16,7 @@ export class ScheduledPaymentController {
 
       const { billId, amount, paymentMethod, frequency, startDate, endDate, maxRetries } = req.body;
 
-      if (!billId || !amount || !paymentMethod || !frequency || !startDate) {
+      if (!billId || amount === undefined || amount === null || !paymentMethod || !frequency || !startDate) {
         res.status(400).json({ status: 400, error: "Missing required fields: billId, amount, paymentMethod, frequency, startDate" });
         return;
       }
