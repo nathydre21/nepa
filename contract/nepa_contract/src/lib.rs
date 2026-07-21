@@ -1,6 +1,6 @@
 #![no_std]
-// We added 'Address' and 'token' to imports
-use soroban_sdk::{contract, contractimpl, symbol_short, token, Address, Env, String, Symbol};
+extern crate alloc;
+use soroban_sdk::{contract, contractimpl, symbol_short, token, Address, Env, String, Symbol, Vec};
 
 mod oracle;
 use oracle::{OracleConfig, OracleManager, PriceFeed, UtilityRate};
@@ -26,8 +26,90 @@ mod tests;
 #[cfg(test)]
 mod upgrade_tests;
 
+// SECURITY (Issue #414): Storage keys for security features
+const REENTRANCY_GUARD: Symbol = symbol_short!("RE_GUARD");
+
+// SECURITY (Issue #414): Maximum payment amount ceiling (1 billion tokens)
+const MAX_PAYMENT_AMOUNT: i128 = 1_000_000_000_000_000;
+
+// SECURITY (Issue #414): Maximum allowed meter ID length in bytes
+const MAX_METER_ID_LENGTH: u32 = 64;
+
+// SECURITY (Issue #414): Maximum payments per meter per ledger
+const RATE_LIMIT_PER_LEDGER: u32 = 10;
+
 #[contract]
 pub struct NepaBillingContract;
+
+// SECURITY (Issue #414): Validate meter_id is non-empty and within length limits
+fn validate_meter_id(meter_id: &String) -> Result<(), String> {
+    let len = meter_id.as_bytes().len();
+    if len == 0 {
+        return Err("Meter ID cannot be empty".to_string());
+    }
+    if (len as u32) > MAX_METER_ID_LENGTH {
+        return Err("Meter ID exceeds maximum length".to_string());
+    }
+    Ok(())
+}
+
+// SECURITY (Issue #414): Validate currency against supported whitelist
+fn validate_currency(env: &Env, currency: &String) -> Result<(), String> {
+    let usd = String::from_str(env, "USD");
+    let ngn = String::from_str(env, "NGN");
+    let eur = String::from_str(env, "EUR");
+    let gbp = String::from_str(env, "GBP");
+    let xlm = String::from_str(env, "XLM");
+
+    if currency != &usd && currency != &ngn && currency != &eur && currency != &gbp && currency != &xlm
+    {
+        return Err("Unsupported currency. Allowed: USD, NGN, EUR, GBP, XLM".to_string());
+    }
+    Ok(())
+}
+
+// SECURITY (Issue #414): Re-entrancy guard using storage flag
+fn check_reentrancy(env: &Env) -> Result<(), String> {
+    let locked: bool = env.storage().instance().get(&REENTRANCY_GUARD).unwrap_or(false);
+    if locked {
+        return Err("Re-entrant call detected".to_string());
+    }
+    env.storage().instance().set(&REENTRANCY_GUARD, &true);
+    Ok(())
+}
+
+fn clear_reentrancy(env: &Env) {
+    env.storage().instance().set(&REENTRANCY_GUARD, &false);
+}
+
+// SECURITY (Issue #414): Per-ledger rate limiting per meter
+fn check_rate_limit(env: &Env, meter_id: &String) -> Result<(), String> {
+    let ledger_seq = env.ledger().sequence();
+    let rate_key = format!("rl_{}_{}", ledger_seq, meter_id);
+    let count: u32 = env.storage().persistent().get(&rate_key).unwrap_or(0);
+    if count >= RATE_LIMIT_PER_LEDGER {
+        return Err("Payment rate limit exceeded for this meter".to_string());
+    }
+    env.storage().persistent().set(&rate_key, &(count + 1));
+    Ok(())
+}
+
+// SECURITY (Issue #414): Safe multiplication with overflow check
+fn checked_mul_div(a: i128, b: i128, divisor: i128) -> Result<i128, String> {
+    let product = a.checked_mul(b).ok_or("Integer overflow in price calculation")?;
+    Ok(product / divisor)
+}
+
+// SECURITY (Issue #414): Validate payment amount ceiling
+fn validate_amount(amount: i128) -> Result<(), String> {
+    if amount <= 0 {
+        return Err("Amount must be greater than 0".to_string());
+    }
+    if amount > MAX_PAYMENT_AMOUNT {
+        return Err("Amount exceeds maximum payment limit".to_string());
+    }
+    Ok(())
+}
 
 #[contractimpl]
 impl NepaBillingContract {
@@ -50,10 +132,20 @@ impl NepaBillingContract {
         // 1. Verify the user authorized this payment
         from.require_auth();
 
-        // SECURITY (Issue #411): Validate amount is positive before processing
-        if amount <= 0 {
-            return Err("Amount must be greater than 0".to_string());
-        }
+        // SECURITY (Issue #414): Re-entrancy guard
+        check_reentrancy(&env)?;
+
+        // SECURITY (Issue #414): Validate meter_id
+        validate_meter_id(&meter_id)?;
+
+        // SECURITY (Issue #414): Validate currency
+        validate_currency(&env, &currency)?;
+
+        // SECURITY (Issue #414): Validate amount (positive + ceiling)
+        validate_amount(amount)?;
+
+        // SECURITY (Issue #414): Rate limiting
+        check_rate_limit(&env, &meter_id)?;
 
         // 2. Get exchange rate if needed
         let mut final_amount = amount;
@@ -62,24 +154,7 @@ impl NepaBillingContract {
             let exchange_rate_id = format!("{}_USD", currency);
 
             // SECURITY (Issue #411): Use the new get_price_with_fallback method
-            // instead of calling get_price_feed directly. This method implements
-            // the full fallback chain:
-            //   1. Check for admin manual override (emergency)
-            //   2. Try live oracle price (if circuit breaker is closed)
-            //   3. Validate price deviation (prevent manipulation)
-            //   4. Fall back to cached price (if fallback is enabled)
-            //   5. Return error only if all methods fail
-            //
-            // Previous (vulnerable) code:
-            //   let price_feed = OracleManager::get_price_feed(env.clone(), exchange_rate_id)
-            //       .ok_or("Exchange rate not available")?;
-            //   if price_feed.reliability_score < config.min_reliability_score {
-            //       return Err("Price feed reliability too low".to_string());
-            //   }
-            //   final_amount = (amount * price_feed.price) / (10_i128.pow(price_feed.decimals));
-            //
-            // Fixed code:
-            let max_deviation = 20; // Reject prices that deviate more than 20% from the last known price
+            let max_deviation = 20;
             let (price, decimals, fallback) = OracleManager::get_price_with_fallback(
                 env.clone(),
                 exchange_rate_id,
@@ -88,8 +163,9 @@ impl NepaBillingContract {
 
             used_fallback = fallback;
 
-            // Convert amount using exchange rate
-            final_amount = (amount * price) / (10_i128.pow(decimals));
+            // SECURITY (Issue #414): Overflow-safe multiplication
+            let divisor = 10_i128.pow(decimals);
+            final_amount = checked_mul_div(amount, price, divisor)?;
         }
 
         // 3. Initialize the Token client
@@ -103,6 +179,15 @@ impl NepaBillingContract {
         env.storage()
             .persistent()
             .set(&meter_id, &(current_total + final_amount));
+
+        // SECURITY (Issue #414): Emit payment event for audit trail
+        env.events().publish(
+            (symbol_short!("PAYMENT"), symbol_short!("ORACLE")),
+            (from, meter_id, final_amount, currency, used_fallback),
+        );
+
+        // SECURITY (Issue #414): Clear re-entrancy guard
+        clear_reentrancy(&env);
 
         Ok(())
     }
@@ -121,6 +206,26 @@ impl NepaBillingContract {
         // 1. Verify authorization
         from.require_auth();
 
+        // SECURITY (Issue #414): Re-entrancy guard
+        check_reentrancy(&env)?;
+
+        // SECURITY (Issue #414): Validate meter_id
+        validate_meter_id(&meter_id)?;
+
+        // SECURITY (Issue #414): Validate currency
+        validate_currency(&env, &currency)?;
+
+        // SECURITY (Issue #414): Validate consumption
+        if kwh_consumed <= 0 {
+            return Err("Consumption must be greater than 0".to_string());
+        }
+        if kwh_consumed > 1_000_000_000_000 {
+            return Err("Consumption exceeds maximum limit".to_string());
+        }
+
+        // SECURITY (Issue #414): Rate limiting
+        check_rate_limit(&env, &meter_id)?;
+
         // 2. Get utility rate
         let rate_id = format!("{}_{}", utility_type, region);
         let utility_rate = OracleManager::get_utility_rate(env.clone(), rate_id)
@@ -137,17 +242,18 @@ impl NepaBillingContract {
             return Err("Utility rate reliability too low".to_string());
         }
 
-        // 4. Calculate bill amount
-        let subtotal = kwh_consumed * utility_rate.rate_per_kwh;
+        // 4. Calculate bill amount with overflow protection
+        let subtotal = kwh_consumed
+            .checked_mul(utility_rate.rate_per_kwh)
+            .ok_or("Integer overflow in bill calculation")?;
+
+        validate_amount(subtotal)?;
 
         // 5. Apply currency conversion if needed
         let mut final_amount = subtotal;
         if utility_rate.currency != currency {
             let exchange_rate_id = format!("{}_{}", utility_rate.currency, currency);
 
-            // SECURITY (Issue #411): Use fallback-enabled price retrieval
-            // instead of calling get_price_feed directly. This ensures
-            // payments can continue even when the oracle is temporarily down.
             let max_deviation = 20;
             let (price, decimals, _fallback) = OracleManager::get_price_with_fallback(
                 env.clone(),
@@ -155,8 +261,11 @@ impl NepaBillingContract {
                 max_deviation,
             )?;
 
-            final_amount = (subtotal * price) / (10_i128.pow(decimals));
+            let divisor = 10_i128.pow(decimals);
+            final_amount = checked_mul_div(subtotal, price, divisor)?;
         }
+
+        validate_amount(final_amount)?;
 
         // 6. Process payment
         let token_client = token::Client::new(&env, &token_address);
@@ -172,6 +281,15 @@ impl NepaBillingContract {
         );
         env.storage().persistent().set(&billing_key, &billing_data);
 
+        // SECURITY (Issue #414): Emit payment event for audit trail
+        env.events().publish(
+            (symbol_short!("PAYMENT"), symbol_short!("UTILITY")),
+            (from, meter_id, final_amount, currency, kwh_consumed),
+        );
+
+        // SECURITY (Issue #414): Clear re-entrancy guard
+        clear_reentrancy(&env);
+
         Ok(())
     }
 
@@ -182,9 +300,21 @@ impl NepaBillingContract {
         token_address: Address,
         meter_id: String,
         amount: i128,
-    ) {
+    ) -> Result<(), String> {
         // 1. Verify the user authorized this payment
         from.require_auth();
+
+        // SECURITY (Issue #414): Re-entrancy guard
+        check_reentrancy(&env)?;
+
+        // SECURITY (Issue #414): Validate meter_id
+        validate_meter_id(&meter_id)?;
+
+        // SECURITY (Issue #414): Validate amount (positive + ceiling)
+        validate_amount(amount)?;
+
+        // SECURITY (Issue #414): Rate limiting
+        check_rate_limit(&env, &meter_id)?;
 
         // 2. Initialize the Token client (for XLM or USDC)
         let token_client = token::Client::new(&env, &token_address);
@@ -197,6 +327,17 @@ impl NepaBillingContract {
         env.storage()
             .persistent()
             .set(&meter_id, &(current_total + amount));
+
+        // SECURITY (Issue #414): Emit payment event for audit trail
+        env.events().publish(
+            (symbol_short!("PAYMENT"), symbol_short!("SIMPLE")),
+            (from, meter_id, amount),
+        );
+
+        // SECURITY (Issue #414): Clear re-entrancy guard
+        clear_reentrancy(&env);
+
+        Ok(())
     }
 
     pub fn get_total_paid(env: Env, meter_id: String) -> i128 {
@@ -426,6 +567,26 @@ impl NepaBillingContract {
         // 1. Verify authorization
         from.require_auth();
 
+        // SECURITY (Issue #414): Re-entrancy guard
+        check_reentrancy(&env)?;
+
+        // SECURITY (Issue #414): Validate meter_id
+        validate_meter_id(&meter_id)?;
+
+        // SECURITY (Issue #414): Validate currency
+        validate_currency(&env, &currency)?;
+
+        // SECURITY (Issue #414): Validate consumption
+        if consumption <= 0 {
+            return Err("Consumption must be greater than 0".to_string());
+        }
+        if consumption > 1_000_000_000_000 {
+            return Err("Consumption exceeds maximum limit".to_string());
+        }
+
+        // SECURITY (Issue #414): Rate limiting
+        check_rate_limit(&env, &meter_id)?;
+
         // 2. Get meter information
         let meter = MultiUtilityManager::get_meter(env.clone(), meter_id.clone())
             .ok_or("Meter not found")?;
@@ -443,13 +604,17 @@ impl NepaBillingContract {
             return Err("Utility configuration is not active".to_string());
         }
 
-        // 4. Calculate base amount
-        let mut base_amount = consumption * config.base_rate;
+        // 4. Calculate base amount with overflow protection
+        let mut base_amount = consumption
+            .checked_mul(config.base_rate)
+            .ok_or("Integer overflow in base amount calculation")?;
 
         // 5. Apply tier rates if applicable
         for tier_rate in config.tier_rates.iter() {
             if consumption >= tier_rate.min_units && consumption <= tier_rate.max_units {
-                base_amount = consumption * tier_rate.rate_per_unit;
+                base_amount = consumption
+                    .checked_mul(tier_rate.rate_per_unit)
+                    .ok_or("Integer overflow in tier rate calculation")?;
                 break;
             }
         }
@@ -463,37 +628,38 @@ impl NepaBillingContract {
                 && current_hour <= tou_rate.end_hour
                 && tou_rate.days_of_week.contains(current_day_of_week)
             {
-                base_amount = (base_amount * tou_rate.rate_multiplier) / 100;
+                base_amount = checked_mul_div(base_amount, tou_rate.rate_multiplier, 100)?;
                 break;
             }
         }
 
-        // 7. Apply taxes
+        // 7. Apply taxes with overflow protection
         let mut tax_amount = 0i128;
         for tax in config.tax_rates.iter() {
-            let tax_calc = (base_amount * tax.rate_percentage) / 100;
-            tax_amount += tax_calc;
+            let tax_calc = checked_mul_div(base_amount, tax.rate_percentage, 100)?;
+            tax_amount = tax_amount
+                .checked_add(tax_calc)
+                .ok_or("Integer overflow in tax calculation")?;
         }
 
         // 8. Apply fees if requested
         let mut fee_amount = 0i128;
         if apply_fees {
-            let fees_key = format!("{}_{}", meter.provider_id, meter.utility_type.to_u8());
-            // In a real implementation, we'd query fees by provider and utility type
-            // For now, we'll use a default processing fee
             fee_amount = 1000000; // 0.001 XLM default processing fee
         }
 
-        // 9. Calculate final amount
-        let subtotal = base_amount + tax_amount + fee_amount;
+        // 9. Calculate final amount with overflow protection
+        let subtotal = base_amount
+            .checked_add(tax_amount)
+            .ok_or("Integer overflow in subtotal calculation")?
+            .checked_add(fee_amount)
+            .ok_or("Integer overflow in subtotal calculation")?;
 
         // 10. Apply currency conversion if needed
         let mut final_amount = subtotal;
         if config.currency != currency {
             let exchange_rate_id = format!("{}_{}", config.currency, currency);
 
-            // SECURITY (Issue #411): Use fallback-enabled price retrieval
-            // to ensure multi-utility payments work during oracle downtime.
             let max_deviation = 20;
             let (price, decimals, _fallback) = OracleManager::get_price_with_fallback(
                 env.clone(),
@@ -501,7 +667,8 @@ impl NepaBillingContract {
                 max_deviation,
             )?;
 
-            final_amount = (subtotal * price) / (10_i128.pow(decimals));
+            let divisor = 10_i128.pow(decimals);
+            final_amount = checked_mul_div(subtotal, price, divisor)?;
         }
 
         // 11. Validate payment limits
@@ -511,6 +678,8 @@ impl NepaBillingContract {
         if final_amount > config.maximum_payment {
             return Err("Amount exceeds maximum payment".to_string());
         }
+
+        validate_amount(final_amount)?;
 
         // 12. Process payment
         let token_client = token::Client::new(&env, &token_address);
@@ -545,6 +714,15 @@ impl NepaBillingContract {
                 .persistent()
                 .set(&multi_utility::UTILITY_PROVIDERS, &providers);
         }
+
+        // SECURITY (Issue #414): Emit payment event for audit trail
+        env.events().publish(
+            (symbol_short!("PAYMENT"), symbol_short!("MULTI")),
+            (from, meter_id, final_amount, currency, consumption),
+        );
+
+        // SECURITY (Issue #414): Clear re-entrancy guard
+        clear_reentrancy(&env);
 
         Ok(())
     }
