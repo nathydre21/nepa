@@ -5,6 +5,7 @@ import { conditionalCaptcha } from '../middleware/captcha';
 import { abuseDetector } from '../middleware/abuseDetection';
 import { invalidateUserCache, invalidateCacheByPattern } from '../middleware/cache';
 import { Server, TransactionBuilder, Networks, BASE_FEE, Asset, Transaction } from 'stellar-sdk';
+import { getCacheManager } from '../services/RedisCacheManager';
 
 const billingService = new BillingService();
 
@@ -27,8 +28,9 @@ interface TransactionStatus {
   errorMessage?: string;
 }
 
-// In-memory transaction status store (in production, use Redis or database)
-const transactionStatusStore = new Map<string, TransactionStatus>();
+// Use Redis for transaction status storage (shared, persistent across instances)
+const cacheManager = getCacheManager();
+const TRANSACTION_TTL = parseInt(process.env.TRANSACTION_TTL_SECONDS || '604800'); // default 7 days
 
 // Apply rate limiting and security to all payment routes
 export const applyPaymentSecurity = [
@@ -243,7 +245,7 @@ export const processPayment = async (req: Request, res: Response) => {
       });
     }
 
-    // Initialize transaction status
+    // Initialize transaction status (persist to Redis with TTL)
     const transactionStatus: TransactionStatus = {
       id: transactionId,
       userId,
@@ -254,7 +256,7 @@ export const processPayment = async (req: Request, res: Response) => {
       createdAt: new Date(),
       updatedAt: new Date()
     };
-    transactionStatusStore.set(transactionId, transactionStatus);
+    await cacheManager.set(`transaction:${transactionId}`, transactionStatus, { ttl: TRANSACTION_TTL, tags: ['transaction', `user:${userId}`] });
 
     let paymentResult;
     let stellarTransactionId: string | undefined;
@@ -278,9 +280,10 @@ export const processPayment = async (req: Request, res: Response) => {
         });
       }
 
-      // Update status to processing
+      // Update status to processing and persist
       transactionStatus.status = 'processing';
       transactionStatus.updatedAt = new Date();
+      await cacheManager.set(`transaction:${transactionId}`, transactionStatus, { ttl: TRANSACTION_TTL, tags: ['transaction', `user:${userId}`] });
 
       try {
         // Reconstruct the transaction from the client-signed XDR.
@@ -317,7 +320,7 @@ export const processPayment = async (req: Request, res: Response) => {
             amount,
             paymentMethod,
             timestamp: new Date(),
-            transactionId: stellarTransactionId
+            transactionId: stellarTransactionId || transactionId
           }),
           stellarTransactionId,
           network: 'testnet'
@@ -325,29 +328,33 @@ export const processPayment = async (req: Request, res: Response) => {
 
         transactionStatus.status = 'completed';
         transactionStatus.stellarTransactionId = stellarTransactionId;
+        await cacheManager.set(`transaction:${transactionId}`, transactionStatus, { ttl: TRANSACTION_TTL, tags: ['transaction', `user:${userId}`] });
 
       } catch (stellarError: any) {
         console.error('Stellar payment error:', stellarError);
         transactionStatus.status = 'failed';
         transactionStatus.errorMessage = stellarError.message || 'Stellar transaction failed';
-        
-        return res.status(400).json({
-          status: 400,
-          error: 'Stellar payment processing failed',
-          details: stellarError.message,
-          transactionId
-        });
+        await cacheManager.set(`transaction:${transactionId}`, transactionStatus, { ttl: TRANSACTION_TTL, tags: ['transaction', `user:${userId}`] });
+      
+          return res.status(400).json({
+            status: 400,
+            error: 'Stellar payment processing failed',
+            details: stellarError.message,
+            transactionId
+          });
       }
     } else {
       // Handle traditional payment methods
-      paymentResult = await billingService.processPayment({
-        billId,
-        userId,
-        amount,
-        paymentMethod,
-        timestamp: new Date()
-      });
-      transactionStatus.status = 'completed';
+        paymentResult = await billingService.processPayment({
+          billId,
+          userId,
+          amount,
+          paymentMethod,
+          timestamp: new Date(),
+          transactionId
+        });
+        transactionStatus.status = 'completed';
+        await cacheManager.set(`transaction:${transactionId}`, transactionStatus, { ttl: TRANSACTION_TTL, tags: ['transaction', `user:${userId}`] });
     }
     
     transactionStatus.updatedAt = new Date();
@@ -370,12 +377,17 @@ export const processPayment = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Payment processing error:', error);
     
-    // Update transaction status to failed
-    const failedTransaction = transactionStatusStore.get(transactionId);
-    if (failedTransaction) {
-      failedTransaction.status = 'failed';
-      failedTransaction.errorMessage = error.message || 'Unknown error';
-      failedTransaction.updatedAt = new Date();
+    // Update transaction status to failed (persist to Redis)
+    try {
+      const failedTransaction = await cacheManager.get<TransactionStatus>(`transaction:${transactionId}`);
+      if (failedTransaction) {
+        failedTransaction.status = 'failed';
+        failedTransaction.errorMessage = error.message || 'Unknown error';
+        failedTransaction.updatedAt = new Date();
+        await cacheManager.set(`transaction:${transactionId}`, failedTransaction, { ttl: TRANSACTION_TTL, tags: ['transaction', `user:${userId}`] });
+      }
+    } catch (e) {
+      console.error('Failed to update failed transaction in cache:', e);
     }
     
     res.status(500).json({
@@ -540,39 +552,59 @@ export const getTransactionStatus = async (req: Request, res: Response) => {
       });
     }
     
-    const transaction = transactionStatusStore.get(transactionId);
-    
-    if (!transaction || transaction.userId !== userId) {
-      return res.status(404).json({
-        status: 404,
-        error: 'Transaction not found or access denied'
-      });
-    }
-    
-    // For Stellar transactions, check network status
-    if (transaction.stellarTransactionId && transaction.status === 'processing') {
-      try {
-        const stellarTx = await stellarServer.transactions()
-          .transaction(transaction.stellarTransactionId)
-          .call();
-        
-        if (stellarTx.successful) {
-          transaction.status = 'completed';
-          transaction.updatedAt = new Date();
-        } else if (stellarTx.status === 'failed') {
-          transaction.status = 'failed';
-          transaction.errorMessage = 'Stellar transaction failed on network';
-          transaction.updatedAt = new Date();
-        }
-      } catch (error) {
-        console.error('Error checking Stellar transaction:', error);
+    // First try Redis (active transactions)
+    const transaction = await cacheManager.get<TransactionStatus>(`transaction:${transactionId}`);
+
+    if (transaction) {
+      if (transaction.userId !== userId) {
+        return res.status(404).json({ status: 404, error: 'Transaction not found or access denied' });
       }
+
+      // For Stellar transactions, check network status when processing
+      if (transaction.stellarTransactionId && transaction.status === 'processing') {
+        try {
+          const stellarTx = await stellarServer.transactions()
+            .transaction(transaction.stellarTransactionId)
+            .call();
+
+          if (stellarTx.successful) {
+            transaction.status = 'completed';
+            transaction.updatedAt = new Date();
+            await cacheManager.set(`transaction:${transactionId}`, transaction, { ttl: TRANSACTION_TTL, tags: ['transaction', `user:${userId}`] });
+          } else if ((stellarTx as any).status === 'failed') {
+            transaction.status = 'failed';
+            transaction.errorMessage = 'Stellar transaction failed on network';
+            transaction.updatedAt = new Date();
+            await cacheManager.set(`transaction:${transactionId}`, transaction, { ttl: TRANSACTION_TTL, tags: ['transaction', `user:${userId}`] });
+          }
+        } catch (error) {
+          console.error('Error checking Stellar transaction:', error);
+        }
+      }
+
+      return res.status(200).json({ status: 200, data: transaction });
     }
-    
-    res.status(200).json({
-      status: 200,
-      data: transaction
-    });
+
+    // If not in Redis, fall back to persisted payments in DB
+    const paymentRecord: any = await billingService.getPaymentByTransactionId(transactionId);
+    if (!paymentRecord || paymentRecord.userId !== userId) {
+      return res.status(404).json({ status: 404, error: 'Transaction not found or access denied' });
+    }
+
+    // Map payment record to TransactionStatus-lite response
+    const fromDb: TransactionStatus = {
+      id: transactionId,
+      userId: paymentRecord.userId,
+      billId: paymentRecord.billId,
+      amount: Number(paymentRecord.amount),
+      paymentMethod: paymentRecord.method,
+      stellarTransactionId: paymentRecord.transactionId,
+      status: paymentRecord.status === 'SUCCESS' ? 'completed' : 'failed',
+      createdAt: paymentRecord.createdAt,
+      updatedAt: paymentRecord.updatedAt
+    };
+
+    return res.status(200).json({ status: 200, data: fromDb });
     
   } catch (error) {
     console.error('Transaction status error:', error);

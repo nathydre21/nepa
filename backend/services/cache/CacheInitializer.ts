@@ -6,6 +6,7 @@ import { getCacheMonitoringService } from './CacheMonitoringService';
 import { getMicroserviceCacheService } from './MicroserviceCacheService';
 import { getCacheManager } from '../RedisCacheManager';
 import { logger } from '../logger';
+import { startTransactionCleanup } from '../TransactionCleanupService';
 
 export interface CacheInitializationResult {
   success: boolean;
@@ -139,6 +140,12 @@ export class CacheInitializer {
           services: result.services,
           warnings: result.warnings.length
         });
+        // Start background cleanup job for transaction entries
+        try {
+          startTransactionCleanup();
+        } catch (e) {
+          logger.error('Failed to start transaction cleanup job:', e as any);
+        }
       } else {
         logger.error('Cache system initialization failed', {
           errors: result.errors,

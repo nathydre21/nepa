@@ -259,6 +259,22 @@ class RedisCacheManager {
     }
   }
 
+  // Return logical keys (without client keyPrefix) matching the pattern
+  async scanKeys(pattern: string): Promise<string[]> {
+    try {
+      // The client will apply the configured keyPrefix when executing commands,
+      // so pass the pattern as-is. The returned keys include the prefix, so
+      // strip it before returning logical keys.
+      const rawKeys = await this.client.keys(pattern);
+      const prefix = (this.client.options && (this.client.options as any).keyPrefix) || '';
+      if (!prefix) return rawKeys;
+      return rawKeys.map(k => (k.startsWith(prefix) ? k.slice(prefix.length) : k));
+    } catch (error) {
+      logger.error(`Redis scanKeys error for pattern ${pattern}:`, error as any);
+      return [];
+    }
+  }
+
   async getStats(): Promise<CacheStats> {
     try {
       const info = await this.client.info('memory');
