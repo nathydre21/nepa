@@ -4,6 +4,9 @@ import { paymentLimiter, transactionLimiter } from '../middleware/rateLimiter';
 import { conditionalCaptcha } from '../middleware/captcha';
 import { abuseDetector } from '../middleware/abuseDetection';
 import { invalidateUserCache, invalidateCacheByPattern } from '../middleware/cache';
+// Note: Keypair import was removed in PR #416 for security (Issue #406).
+// The server must never handle the user's Stellar secret key. Instead,
+// clients sign transactions locally and submit the signed XDR.
 import { Server, TransactionBuilder, Networks, BASE_FEE, Asset, Transaction } from 'stellar-sdk';
 
 const billingService = new BillingService();
