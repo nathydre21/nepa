@@ -107,3 +107,17 @@ test-data/
 
 # Exclude Kiro files and folders
 .kiro/
+
+# Backup files
+*.backup
+*.bak
+*.old
+*.orig
+*.tmp
+
+# Editor swap files (additional)
+*.swp
+*.swo
+
+# NEPA specific
+nepa-frontend/package-lock.json
