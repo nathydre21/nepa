@@ -4,6 +4,7 @@ import { paymentLimiter, transactionLimiter } from '../middleware/rateLimiter';
 import { conditionalCaptcha } from '../middleware/captcha';
 import { abuseDetector } from '../middleware/abuseDetection';
 import { invalidateUserCache, invalidateCacheByPattern } from '../middleware/cache';
+import { logger } from '../middleware/logger';
 import { Server, TransactionBuilder, Networks, BASE_FEE, Asset, Transaction } from 'stellar-sdk';
 
 const billingService = new BillingService();
@@ -143,7 +144,7 @@ export const prepareStellarPayment = async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    console.error('Error preparing Stellar transaction:', error);
+    logger.error('Error preparing Stellar transaction', { error: error.message });
     res.status(400).json({
       status: 400,
       error: 'Failed to prepare Stellar transaction',
@@ -236,7 +237,7 @@ export const processPayment = async (req: Request, res: Response) => {
     // key — this field should never be present. Log the attempt for security
     // monitoring to detect potential attacks or misconfigured clients.
     if (req.body.stellarSecretKey || req.body.secretKey || req.body.seed) {
-      console.warn(`[SECURITY] User ${userId} attempted to pass a secret key in payment request. This is a security violation.`);
+      logger.warn(`[SECURITY] User ${userId} attempted to pass a secret key in payment request. This is a security violation.`);
       return res.status(400).json({
         status: 400,
         error: 'Secret keys must never be sent to the server. Please sign your transaction locally with your wallet and submit the signed XDR.'
@@ -327,7 +328,7 @@ export const processPayment = async (req: Request, res: Response) => {
         transactionStatus.stellarTransactionId = stellarTransactionId;
 
       } catch (stellarError: any) {
-        console.error('Stellar payment error:', stellarError);
+        logger.error('Stellar payment error', { error: stellarError.message });
         transactionStatus.status = 'failed';
         transactionStatus.errorMessage = stellarError.message || 'Stellar transaction failed';
         
@@ -368,7 +369,7 @@ export const processPayment = async (req: Request, res: Response) => {
     });
     
   } catch (error: any) {
-    console.error('Payment processing error:', error);
+    logger.error('Payment processing error', { error: error.message });
     
     // Update transaction status to failed
     const failedTransaction = transactionStatusStore.get(transactionId);
@@ -431,7 +432,7 @@ export const getPaymentHistory = async (req: Request, res: Response) => {
     });
     
   } catch (error) {
-    console.error('Payment history error:', error);
+    logger.error('Payment history error', { error: error.message });
     res.status(500).json({
       status: 500,
       error: 'Failed to retrieve payment history'
@@ -501,7 +502,7 @@ export const validatePayment = async (req: Request, res: Response) => {
     });
     
   } catch (error) {
-    console.error('Payment validation error:', error);
+    logger.error('Payment validation error', { error: error.message });
     res.status(500).json({
       status: 500,
       error: 'Payment validation failed'
@@ -565,7 +566,7 @@ export const getTransactionStatus = async (req: Request, res: Response) => {
           transaction.updatedAt = new Date();
         }
       } catch (error) {
-        console.error('Error checking Stellar transaction:', error);
+        logger.error('Error checking Stellar transaction', { error: error.message });
       }
     }
     
@@ -575,7 +576,7 @@ export const getTransactionStatus = async (req: Request, res: Response) => {
     });
     
   } catch (error) {
-    console.error('Transaction status error:', error);
+    logger.error('Transaction status error', { error: error.message });
     res.status(500).json({
       status: 500,
       error: 'Failed to retrieve transaction status'
