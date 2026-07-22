@@ -110,3 +110,6 @@ test-data/
 
 # PR description files
 PR_*.md
+
+# Deprecated frontend
+nepa-frontend/package-lock.json
