@@ -1,16 +1,18 @@
-// TODO: Fix missing analytics-client Prisma client
-// import { PrismaClient as AnalyticsPrismaClient } from '../../node_modules/.prisma/analytics-client';
+import { PrismaClient as AnalyticsPrismaClient } from '../../node_modules/.prisma/analytics-client';
+import { buildOptimizedDatabaseUrl } from './urlOptimizer';
 
-// Temporarily disabled to get server running
-// const analyticsClient = new AnalyticsPrismaClient({
-//   datasources: {
-//     db: {
-//       url: process.env.ANALYTICS_SERVICE_DATABASE_URL,
-//     },
-//   },
-// });
+const analyticsClient = new AnalyticsPrismaClient({
+  datasources: {
+    db: {
+      url: buildOptimizedDatabaseUrl(process.env.ANALYTICS_SERVICE_DATABASE_URL || ''),
+    },
+  },
+  log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+});
 
-// Mock analytics client for now
-const analyticsClient = null;
+// Graceful shutdown
+process.on('beforeExit', async () => {
+  await analyticsClient.$disconnect();
+});
 
 export default analyticsClient;
