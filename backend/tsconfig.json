@@ -61,7 +61,6 @@
         "dist",
         "**/*.test.ts",
         "**/*.spec.ts",
-        "nepa-frontend",
         "nepa-dapp",
         "src/**/*",
         "microservices/**/*"
