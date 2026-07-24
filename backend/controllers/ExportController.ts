@@ -3,6 +3,7 @@ import { exportService, ExportOptions, ExportProgress } from '../services/Export
 import { PrismaClient, BillStatus, PaymentStatus, UserRole } from '@prisma/client';
 import { join } from 'path';
 import { existsSync, createReadStream } from 'fs';
+import { errorResponse } from '../utils/errorResponse';
 
 const prisma = new PrismaClient();
 
@@ -85,23 +86,17 @@ export const startExport = async (req: Request, res: Response) => {
 
     // Validate required fields
     if (!format || !dataType) {
-      return res.status(400).json({
-        error: 'Missing required fields: format and dataType are required'
-      });
+      return errorResponse(res, 400, 'Missing required fields: format and dataType are required');
     }
 
     // Validate format
     if (!['csv', 'excel', 'pdf'].includes(format)) {
-      return res.status(400).json({
-        error: 'Invalid format. Must be one of: csv, excel, pdf'
-      });
+      return errorResponse(res, 400, 'Invalid format. Must be one of: csv, excel, pdf');
     }
 
     // Validate data type
     if (!['payments', 'bills', 'users', 'analytics'].includes(dataType)) {
-      return res.status(400).json({
-        error: 'Invalid dataType. Must be one of: payments, bills, users, analytics'
-      });
+      return errorResponse(res, 400, 'Invalid dataType. Must be one of: payments, bills, users, analytics');
     }
 
     // Parse and validate filters
@@ -110,14 +105,14 @@ export const startExport = async (req: Request, res: Response) => {
       if (filters.startDate) {
         exportFilters.startDate = new Date(filters.startDate);
         if (isNaN(exportFilters.startDate.getTime())) {
-          return res.status(400).json({ error: 'Invalid startDate format' });
+          return errorResponse(res, 400, 'Invalid startDate format');
         }
       }
       
       if (filters.endDate) {
         exportFilters.endDate = new Date(filters.endDate);
         if (isNaN(exportFilters.endDate.getTime())) {
-          return res.status(400).json({ error: 'Invalid endDate format' });
+          return errorResponse(res, 400, 'Invalid endDate format');
         }
       }
 
@@ -129,12 +124,12 @@ export const startExport = async (req: Request, res: Response) => {
       if (filters.status) {
         if (dataType === 'payments') {
           if (!Object.values(PaymentStatus).includes(filters.status as PaymentStatus)) {
-            return res.status(400).json({ error: 'Invalid payment status' });
+            return errorResponse(res, 400, 'Invalid payment status');
           }
           exportFilters.status = filters.status as PaymentStatus;
         } else if (dataType === 'bills') {
           if (!Object.values(BillStatus).includes(filters.status as BillStatus)) {
-            return res.status(400).json({ error: 'Invalid bill status' });
+            return errorResponse(res, 400, 'Invalid bill status');
           }
           exportFilters.status = filters.status as BillStatus;
         }
@@ -142,14 +137,14 @@ export const startExport = async (req: Request, res: Response) => {
 
       if (filters.utilityType) {
         if (!['ELECTRICITY', 'WATER', 'GAS'].includes(filters.utilityType)) {
-          return res.status(400).json({ error: 'Invalid utility type' });
+          return errorResponse(res, 400, 'Invalid utility type');
         }
         exportFilters.utilityType = filters.utilityType;
       }
 
       if (filters.role) {
         if (!Object.values(UserRole).includes(filters.role as UserRole)) {
-          return res.status(400).json({ error: 'Invalid user role' });
+          return errorResponse(res, 400, 'Invalid user role');
         }
         exportFilters.role = filters.role as UserRole;
       }
@@ -158,7 +153,7 @@ export const startExport = async (req: Request, res: Response) => {
     // Validate date range
     if (exportFilters.startDate && exportFilters.endDate) {
       if (exportFilters.startDate > exportFilters.endDate) {
-        return res.status(400).json({ error: 'startDate must be before endDate' });
+        return errorResponse(res, 400, 'startDate must be before endDate');
       }
     }
 
@@ -182,10 +177,7 @@ export const startExport = async (req: Request, res: Response) => {
 
   } catch (error) {
     console.error('Export error:', error);
-    res.status(500).json({
-      error: 'Failed to start export',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    errorResponse(res, 500, 'Failed to start export');
   }
 };
 
@@ -238,23 +230,20 @@ export const getExportProgress = async (req: Request, res: Response) => {
     const { exportId } = req.params;
 
     if (!exportId) {
-      return res.status(400).json({ error: 'Export ID is required' });
+      return errorResponse(res, 400, 'Export ID is required');
     }
 
     const progress = exportService.getExportProgress(exportId);
 
     if (!progress) {
-      return res.status(404).json({ error: 'Export not found' });
+      return errorResponse(res, 404, 'Export not found');
     }
 
     res.status(200).json(progress);
 
   } catch (error) {
     console.error('Get export progress error:', error);
-    res.status(500).json({
-      error: 'Failed to get export progress',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    errorResponse(res, 500, 'Failed to get export progress');
   }
 };
 
@@ -296,10 +285,7 @@ export const getAllExports = async (req: Request, res: Response) => {
 
   } catch (error) {
     console.error('Get all exports error:', error);
-    res.status(500).json({
-      error: 'Failed to get exports',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    errorResponse(res, 500, 'Failed to get exports');
   }
 };
 
@@ -335,20 +321,17 @@ export const downloadExport = async (req: Request, res: Response) => {
     const { exportId } = req.params;
 
     if (!exportId) {
-      return res.status(400).json({ error: 'Export ID is required' });
+      return errorResponse(res, 400, 'Export ID is required');
     }
 
     const progress = exportService.getExportProgress(exportId);
 
     if (!progress) {
-      return res.status(404).json({ error: 'Export not found' });
+      return errorResponse(res, 404, 'Export not found');
     }
 
     if (progress.status !== 'completed') {
-      return res.status(400).json({ 
-        error: 'Export not ready for download',
-        status: progress.status 
-      });
+      return errorResponse(res, 400, 'Export not ready for download');
     }
 
     // Determine file path based on export ID (assuming file naming convention)
@@ -380,7 +363,7 @@ export const downloadExport = async (req: Request, res: Response) => {
     }
 
     if (!filePath) {
-      return res.status(404).json({ error: 'Export file not found' });
+      return errorResponse(res, 404, 'Export file not found');
     }
 
     // Set headers for file download
@@ -393,10 +376,7 @@ export const downloadExport = async (req: Request, res: Response) => {
 
   } catch (error) {
     console.error('Download export error:', error);
-    res.status(500).json({
-      error: 'Failed to download export',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    errorResponse(res, 500, 'Failed to download export');
   }
 };
 
@@ -429,7 +409,7 @@ export const cleanupExports = async (req: Request, res: Response) => {
     // Check if user is admin (this would depend on your auth system)
     const user = (req as any).user;
     if (!user || !['ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
-      return res.status(403).json({ error: 'Admin access required' });
+      return errorResponse(res, 403, 'Admin access required');
     }
 
     const { maxAgeHours = 24 } = req.body;
@@ -443,10 +423,7 @@ export const cleanupExports = async (req: Request, res: Response) => {
 
   } catch (error) {
     console.error('Cleanup exports error:', error);
-    res.status(500).json({
-      error: 'Failed to cleanup exports',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    errorResponse(res, 500, 'Failed to cleanup exports');
   }
 };
 
@@ -573,9 +550,6 @@ export const getExportTemplates = async (req: Request, res: Response) => {
 
   } catch (error) {
     console.error('Get export templates error:', error);
-    res.status(500).json({
-      error: 'Failed to get export templates',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    errorResponse(res, 500, 'Failed to get export templates');
   }
 };

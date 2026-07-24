@@ -73,6 +73,7 @@ describe('AnalyticsController', () => {
 
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith({
+         success: false,
         error: 'Failed to fetch dashboard data'
       });
     });
@@ -212,6 +213,7 @@ describe('AnalyticsController', () => {
 
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith({
+         success: false,
         error: 'Failed to generate report'
       });
     });
@@ -226,6 +228,7 @@ describe('AnalyticsController', () => {
 
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith({
+         success: false,
         error: 'Failed to generate report'
       });
     });
@@ -254,6 +257,7 @@ describe('AnalyticsController', () => {
 
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith({
+         success: false,
         error: 'Failed to export data'
       });
     });

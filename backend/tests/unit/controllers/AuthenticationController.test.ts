@@ -1,31 +1,60 @@
 import { Request, Response } from 'express';
-import { AuthenticationController } from '../../../controllers/AuthenticationController';
-import { AuthenticationService } from '../../../services/AuthenticationService';
 import { TwoFactorMethod } from '@prisma/client';
 import { mockRequest, mockResponse, mockNext, createMockAuth } from '../../mocks';
 
-jest.mock('../../../services/AuthenticationService');
+jest.mock('@prisma/client', () => ({
+  TwoFactorMethod: {
+    TOTP: 'TOTP',
+    SMS: 'SMS',
+    EMAIL: 'EMAIL',
+    AUTHENTICATOR_APP: 'AUTHENTICATOR_APP',
+  },
+}));
 
-const MockedAuthService = AuthenticationService as jest.MockedClass<typeof AuthenticationService>;
+
+jest.mock('../../../services/logger', () => ({
+  __esModule: true,
+  default: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+    logError: jest.fn(),
+  },
+}));
+
+jest.mock('../../../services/AuthenticationService', () => {
+  const mockAuthService = {
+    register: jest.fn(),
+    login: jest.fn(),
+    loginWithWallet: jest.fn(),
+    refreshToken: jest.fn(),
+    logout: jest.fn(),
+    enableTwoFactor: jest.fn(),
+    verifyTwoFactor: jest.fn(),
+    getTokenStatus: jest.fn(),
+    disableTwoFactor: jest.fn(),
+  };
+  return {
+    AuthenticationService: Object.assign(
+      jest.fn(() => mockAuthService),
+      { __mockInstance: mockAuthService }
+    ),
+  };
+});
+
+import { AuthenticationController } from '../../../controllers/AuthenticationController';
+import { AuthenticationService } from '../../../services/AuthenticationService';
+
+const mockAuthService = (AuthenticationService as any).__mockInstance;
 
 describe('AuthenticationController', () => {
   let authController: AuthenticationController;
-  let mockAuthService: any;
   let req: Request;
   let res: Response;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockAuthService = {
-      register: jest.fn(),
-      login: jest.fn(),
-      loginWithWallet: jest.fn(),
-      refreshToken: jest.fn(),
-      logout: jest.fn(),
-      enableTwoFactor: jest.fn(),
-      verifyTwoFactor: jest.fn()
-    };
-    MockedAuthService.mockImplementation(() => mockAuthService);
     authController = new AuthenticationController();
     req = mockRequest();
     res = mockResponse();
@@ -80,6 +109,7 @@ describe('AuthenticationController', () => {
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith({
+         success: false,
         error: expect.stringContaining('email')
       });
     });
@@ -94,6 +124,7 @@ describe('AuthenticationController', () => {
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith({
+         success: false,
         error: expect.stringContaining('password')
       });
     });
@@ -110,6 +141,7 @@ describe('AuthenticationController', () => {
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith({
+         success: false,
         error: 'Email already registered'
       });
     });
@@ -123,6 +155,7 @@ describe('AuthenticationController', () => {
 
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith({
+         success: false,
         error: 'Internal server error'
       });
     });
@@ -202,6 +235,7 @@ describe('AuthenticationController', () => {
 
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith({
+         success: false,
         error: 'Invalid credentials'
       });
     });
@@ -215,6 +249,7 @@ describe('AuthenticationController', () => {
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith({
+         success: false,
         error: expect.stringContaining('email')
       });
     });
@@ -268,6 +303,7 @@ describe('AuthenticationController', () => {
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith({
+         success: false,
         error: expect.stringContaining('walletAddress')
       });
     });
@@ -314,6 +350,7 @@ describe('AuthenticationController', () => {
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith({
+         success: false,
         error: 'Refresh token required'
       });
     });
@@ -330,6 +367,7 @@ describe('AuthenticationController', () => {
 
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith({
+         success: false,
         error: 'Invalid refresh token'
       });
     });
@@ -355,6 +393,7 @@ describe('AuthenticationController', () => {
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith({
+         success: false,
         error: 'Token required'
       });
     });
@@ -368,6 +407,7 @@ describe('AuthenticationController', () => {
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith({
+         success: false,
         error: 'Logout failed'
       });
     });
@@ -449,6 +489,7 @@ describe('AuthenticationController', () => {
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith({
+         success: false,
         error: expect.stringContaining('method')
       });
     });
@@ -467,6 +508,7 @@ describe('AuthenticationController', () => {
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith({
+         success: false,
         error: 'Failed to enable two-factor authentication'
       });
     });
@@ -495,6 +537,7 @@ describe('AuthenticationController', () => {
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith({
+         success: false,
         error: expect.stringContaining('code')
       });
     });
@@ -511,6 +554,7 @@ describe('AuthenticationController', () => {
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith({
+         success: false,
         error: 'Invalid two-factor code'
       });
     });

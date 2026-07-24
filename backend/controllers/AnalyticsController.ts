@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { AnalyticsService } from '../services/AnalyticsService';
+import { errorResponse } from '../utils/errorResponse';
 
 const analyticsService = new AnalyticsService();
 
@@ -77,7 +78,7 @@ export const getDashboardData = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Dashboard error:', error);
-    res.status(500).json({ error: 'Failed to fetch dashboard data' });
+    errorResponse(res, 500, 'Failed to fetch dashboard data');
   }
 };
 
@@ -96,7 +97,7 @@ export const getRealTimeMetrics = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Real-time metrics error:', error);
-    res.status(500).json({ error: 'Failed to fetch real-time metrics' });
+    errorResponse(res, 500, 'Failed to fetch real-time metrics');
   }
 };
 
@@ -132,7 +133,7 @@ export const generateReport = async (req: Request, res: Response) => {
     res.status(201).json(report);
   } catch (error) {
     console.error('Report generation error:', error);
-    res.status(500).json({ error: 'Failed to generate report' });
+    errorResponse(res, 500, 'Failed to generate report');
   }
 };
 
@@ -221,7 +222,7 @@ export const exportData = async (req: Request, res: Response) => {
     res.send(csv);
   } catch (error) {
     console.error('Export error:', error);
-    res.status(500).json({ error: 'Failed to export data' });
+    errorResponse(res, 500, 'Failed to export data');
   }
 };
 
@@ -234,6 +235,6 @@ export const getPredictions = async (req: Request, res: Response) => {
     res.json(prediction);
   } catch (error) {
     console.error('Prediction error:', error);
-    res.status(500).json({ error: 'Failed to generate predictions' });
+    errorResponse(res, 500, 'Failed to generate predictions');
   }
 };

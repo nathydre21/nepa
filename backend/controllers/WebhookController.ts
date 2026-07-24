@@ -3,6 +3,7 @@ import * as crypto from 'crypto';
 import { webhookService } from '../WebhookService';
 import { logger } from '../logger';
 import prisma from '../prismaClient';
+import { errorResponse } from '../utils/errorResponse';
 
 export class WebhookController {
   /**
@@ -41,10 +42,7 @@ export class WebhookController {
       // or misconfigured, we reject the request here
       if (!isVerified || !webhookId) {
         logger.error(`[SECURITY] Webhook receive endpoint called without signature verification. webhookId=${webhookId}, verified=${isVerified}`);
-        res.status(403).json({
-          success: false,
-          error: 'Webhook signature verification is required',
-        });
+        errorResponse(res, 403, 'Webhook signature verification is required');
         return;
       }
 
@@ -53,10 +51,7 @@ export class WebhookController {
       // Validate the event type is provided
       if (!eventType) {
         logger.warn(`Webhook ${webhookId} received payload without eventType`);
-        res.status(400).json({
-          success: false,
-          error: 'eventType is required in webhook payload',
-        });
+        errorResponse(res, 400, 'eventType is required in webhook payload');
         return;
       }
 
@@ -68,10 +63,7 @@ export class WebhookController {
 
       if (!webhook) {
         logger.warn(`[SECURITY] Webhook ${webhookId} not found during receive`);
-        res.status(404).json({
-          success: false,
-          error: 'Webhook not found',
-        });
+        errorResponse(res, 404, 'Webhook not found');
         return;
       }
 
@@ -80,10 +72,7 @@ export class WebhookController {
       // with a valid signature — the webhook only processes events it subscribed to
       if (!webhook.events.includes(eventType)) {
         logger.warn(`[SECURITY] Webhook ${webhookId} received unsubscribed event type: ${eventType}`);
-        res.status(400).json({
-          success: false,
-          error: `Webhook is not subscribed to event type: ${eventType}`,
-        });
+        errorResponse(res, 400, `Webhook is not subscribed to event type: ${eventType}`);
         return;
       }
 
@@ -117,10 +106,7 @@ export class WebhookController {
       });
     } catch (error) {
       logger.error(`Error receiving webhook: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -135,18 +121,12 @@ export class WebhookController {
 
       // Validation
       if (!url || !events || events.length === 0) {
-        res.status(400).json({
-          success: false,
-          error: 'URL and events array are required',
-        });
+        errorResponse(res, 400, 'URL and events array are required');
         return;
       }
 
       if (!Array.isArray(events)) {
-        res.status(400).json({
-          success: false,
-          error: 'Events must be an array',
-        });
+        errorResponse(res, 400, 'Events must be an array');
         return;
       }
 
@@ -186,10 +166,7 @@ export class WebhookController {
       });
     } catch (error) {
       logger.error(`Error registering webhook: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -219,10 +196,7 @@ export class WebhookController {
       });
     } catch (error) {
       logger.error(`Error fetching webhooks: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -242,18 +216,12 @@ export class WebhookController {
       });
 
       if (!webhook) {
-        res.status(404).json({
-          success: false,
-          error: 'Webhook not found',
-        });
+        errorResponse(res, 404, 'Webhook not found');
         return;
       }
 
       if (webhook.userId !== userId) {
-        res.status(403).json({
-          success: false,
-          error: 'Unauthorized',
-        });
+        errorResponse(res, 403, 'Unauthorized');
         return;
       }
 
@@ -272,10 +240,7 @@ export class WebhookController {
       });
     } catch (error) {
       logger.error(`Error updating webhook: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -294,18 +259,12 @@ export class WebhookController {
       });
 
       if (!webhook) {
-        res.status(404).json({
-          success: false,
-          error: 'Webhook not found',
-        });
+        errorResponse(res, 404, 'Webhook not found');
         return;
       }
 
       if (webhook.userId !== userId) {
-        res.status(403).json({
-          success: false,
-          error: 'Unauthorized',
-        });
+        errorResponse(res, 403, 'Unauthorized');
         return;
       }
 
@@ -317,10 +276,7 @@ export class WebhookController {
       });
     } catch (error) {
       logger.error(`Error deleting webhook: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -340,18 +296,12 @@ export class WebhookController {
       });
 
       if (!webhook) {
-        res.status(404).json({
-          success: false,
-          error: 'Webhook not found',
-        });
+        errorResponse(res, 404, 'Webhook not found');
         return;
       }
 
       if (webhook.userId !== userId) {
-        res.status(403).json({
-          success: false,
-          error: 'Unauthorized',
-        });
+        errorResponse(res, 403, 'Unauthorized');
         return;
       }
 
@@ -372,10 +322,7 @@ export class WebhookController {
       });
     } catch (error) {
       logger.error(`Error fetching webhook events: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -394,18 +341,12 @@ export class WebhookController {
       });
 
       if (!webhook) {
-        res.status(404).json({
-          success: false,
-          error: 'Webhook not found',
-        });
+        errorResponse(res, 404, 'Webhook not found');
         return;
       }
 
       if (webhook.userId !== userId) {
-        res.status(403).json({
-          success: false,
-          error: 'Unauthorized',
-        });
+        errorResponse(res, 403, 'Unauthorized');
         return;
       }
 
@@ -417,10 +358,7 @@ export class WebhookController {
       });
     } catch (error) {
       logger.error(`Error fetching webhook stats: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -439,18 +377,12 @@ export class WebhookController {
       });
 
       if (!webhook) {
-        res.status(404).json({
-          success: false,
-          error: 'Webhook not found',
-        });
+        errorResponse(res, 404, 'Webhook not found');
         return;
       }
 
       if (webhook.userId !== userId) {
-        res.status(403).json({
-          success: false,
-          error: 'Unauthorized',
-        });
+        errorResponse(res, 403, 'Unauthorized');
         return;
       }
 
@@ -462,10 +394,7 @@ export class WebhookController {
       });
     } catch (error) {
       logger.error(`Error testing webhook: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -484,18 +413,12 @@ export class WebhookController {
       });
 
       if (!webhook) {
-        res.status(404).json({
-          success: false,
-          error: 'Webhook not found',
-        });
+        errorResponse(res, 404, 'Webhook not found');
         return;
       }
 
       if (webhook.userId !== userId) {
-        res.status(403).json({
-          success: false,
-          error: 'Unauthorized',
-        });
+        errorResponse(res, 403, 'Unauthorized');
         return;
       }
 
@@ -505,10 +428,7 @@ export class WebhookController {
       });
 
       if (!event || event.webhookId !== webhookId) {
-        res.status(404).json({
-          success: false,
-          error: 'Event not found',
-        });
+        errorResponse(res, 404, 'Event not found');
         return;
       }
 
@@ -520,10 +440,7 @@ export class WebhookController {
       });
     } catch (error) {
       logger.error(`Error retrying webhook event: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -543,18 +460,12 @@ export class WebhookController {
       });
 
       if (!webhook) {
-        res.status(404).json({
-          success: false,
-          error: 'Webhook not found',
-        });
+        errorResponse(res, 404, 'Webhook not found');
         return;
       }
 
       if (webhook.userId !== userId) {
-        res.status(403).json({
-          success: false,
-          error: 'Unauthorized',
-        });
+        errorResponse(res, 403, 'Unauthorized');
         return;
       }
 
@@ -566,10 +477,7 @@ export class WebhookController {
       });
     } catch (error) {
       logger.error(`Error fetching webhook logs: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 }

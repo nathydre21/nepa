@@ -9,6 +9,8 @@ export const mockRequest = (overrides: Partial<Request> = {}): Request => {
     headers: {},
     method: 'GET',
     url: '/test',
+    ip: '127.0.0.1',
+    connection: { remoteAddress: '127.0.0.1' },
     user: null,
     ...overrides
   } as Request;

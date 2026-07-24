@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { rbacService } from '../services/RbacService';
 import { AuthenticatedRequest, requirePermission } from '../middleware/authentication';
 import { ResourceType, PermissionScope } from '@prisma/client';
+import { errorResponse } from '../utils/errorResponse';
 
 export class RoleController {
   // Create a new role
@@ -10,7 +11,7 @@ export class RoleController {
       const { name, description, scope } = req.body;
 
       if (!name) {
-        return res.status(400).json({ error: 'Role name is required' });
+        return errorResponse(res, 400, 'Role name is required');
       }
 
       const role = await rbacService.createRole({
@@ -25,10 +26,7 @@ export class RoleController {
       });
     } catch (error: any) {
       console.error('Create role error:', error);
-      res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to create role'
-      });
+      errorResponse(res, 400, error.message || 'Failed to create role');
     }
   }
 
@@ -51,10 +49,7 @@ export class RoleController {
       });
     } catch (error: any) {
       console.error('Update role error:', error);
-      res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to update role'
-      });
+      errorResponse(res, 400, error.message || 'Failed to update role');
     }
   }
 
@@ -71,10 +66,7 @@ export class RoleController {
       });
     } catch (error: any) {
       console.error('Delete role error:', error);
-      res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to delete role'
-      });
+      errorResponse(res, 400, error.message || 'Failed to delete role');
     }
   }
 
@@ -90,10 +82,7 @@ export class RoleController {
       });
     } catch (error: any) {
       console.error('Get roles error:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message || 'Failed to get roles'
-      });
+      errorResponse(res, 500, error.message || 'Failed to get roles');
     }
   }
 
@@ -106,10 +95,7 @@ export class RoleController {
       const role = await rbacService.getRoleById(id, includePermissions);
 
       if (!role) {
-        return res.status(404).json({
-          success: false,
-          error: 'Role not found'
-        });
+        return errorResponse(res, 404, 'Role not found');
       }
 
       res.json({
@@ -118,10 +104,7 @@ export class RoleController {
       });
     } catch (error: any) {
       console.error('Get role by ID error:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message || 'Failed to get role'
-      });
+      errorResponse(res, 500, error.message || 'Failed to get role');
     }
   }
 
@@ -132,10 +115,7 @@ export class RoleController {
       const { permissionId } = req.body;
 
       if (!permissionId) {
-        return res.status(400).json({
-          success: false,
-          error: 'Permission ID is required'
-        });
+        return errorResponse(res, 400, 'Permission ID is required');
       }
 
       await rbacService.assignPermissionToRole(roleId, permissionId);
@@ -146,10 +126,7 @@ export class RoleController {
       });
     } catch (error: any) {
       console.error('Assign permission to role error:', error);
-      res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to assign permission to role'
-      });
+      errorResponse(res, 400, error.message || 'Failed to assign permission to role');
     }
   }
 
@@ -166,10 +143,7 @@ export class RoleController {
       });
     } catch (error: any) {
       console.error('Remove permission from role error:', error);
-      res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to remove permission from role'
-      });
+      errorResponse(res, 400, error.message || 'Failed to remove permission from role');
     }
   }
 
@@ -180,10 +154,7 @@ export class RoleController {
       const assignedBy = req.user?.id;
 
       if (!userId || !roleId) {
-        return res.status(400).json({
-          success: false,
-          error: 'User ID and Role ID are required'
-        });
+        return errorResponse(res, 400, 'User ID and Role ID are required');
       }
 
       const assignment = await rbacService.assignRoleToUser({
@@ -199,10 +170,7 @@ export class RoleController {
       });
     } catch (error: any) {
       console.error('Assign role to user error:', error);
-      res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to assign role to user'
-      });
+      errorResponse(res, 400, error.message || 'Failed to assign role to user');
     }
   }
 
@@ -219,10 +187,7 @@ export class RoleController {
       });
     } catch (error: any) {
       console.error('Remove role from user error:', error);
-      res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to remove role from user'
-      });
+      errorResponse(res, 400, error.message || 'Failed to remove role from user');
     }
   }
 
@@ -239,10 +204,7 @@ export class RoleController {
       });
     } catch (error: any) {
       console.error('Get user roles error:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message || 'Failed to get user roles'
-      });
+      errorResponse(res, 500, error.message || 'Failed to get user roles');
     }
   }
 
@@ -259,10 +221,7 @@ export class RoleController {
       });
     } catch (error: any) {
       console.error('Get user permissions error:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message || 'Failed to get user permissions'
-      });
+      errorResponse(res, 500, error.message || 'Failed to get user permissions');
     }
   }
 }
@@ -274,10 +233,7 @@ export class PermissionController {
       const { name, description, resource, action, scope } = req.body;
 
       if (!name || !resource || !action) {
-        return res.status(400).json({
-          success: false,
-          error: 'Permission name, resource, and action are required'
-        });
+        return errorResponse(res, 400, 'Permission name, resource, and action are required');
       }
 
       const permission = await rbacService.createPermission({
@@ -294,10 +250,7 @@ export class PermissionController {
       });
     } catch (error: any) {
       console.error('Create permission error:', error);
-      res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to create permission'
-      });
+      errorResponse(res, 400, error.message || 'Failed to create permission');
     }
   }
 
@@ -322,10 +275,7 @@ export class PermissionController {
       });
     } catch (error: any) {
       console.error('Update permission error:', error);
-      res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to update permission'
-      });
+      errorResponse(res, 400, error.message || 'Failed to update permission');
     }
   }
 
@@ -342,10 +292,7 @@ export class PermissionController {
       });
     } catch (error: any) {
       console.error('Delete permission error:', error);
-      res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to delete permission'
-      });
+      errorResponse(res, 400, error.message || 'Failed to delete permission');
     }
   }
 
@@ -360,10 +307,7 @@ export class PermissionController {
       });
     } catch (error: any) {
       console.error('Get permissions error:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message || 'Failed to get permissions'
-      });
+      errorResponse(res, 500, error.message || 'Failed to get permissions');
     }
   }
 }
@@ -376,10 +320,7 @@ export class RbacController {
       const { resource, action, scope } = req.body;
 
       if (!resource || !action) {
-        return res.status(400).json({
-          success: false,
-          error: 'Resource and action are required'
-        });
+        return errorResponse(res, 400, 'Resource and action are required');
       }
 
       const hasPermission = await rbacService.hasPermission(userId, {
@@ -399,10 +340,7 @@ export class RbacController {
       });
     } catch (error: any) {
       console.error('Check permission error:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message || 'Failed to check permission'
-      });
+      errorResponse(res, 500, error.message || 'Failed to check permission');
     }
   }
 
@@ -413,10 +351,7 @@ export class RbacController {
       const { checks } = req.body;
 
       if (!checks || !Array.isArray(checks)) {
-        return res.status(400).json({
-          success: false,
-          error: 'Permission checks array is required'
-        });
+        return errorResponse(res, 400, 'Permission checks array is required');
       }
 
       const hasPermission = await rbacService.hasAnyPermission(userId, checks);
@@ -430,10 +365,7 @@ export class RbacController {
       });
     } catch (error: any) {
       console.error('Check any permission error:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message || 'Failed to check permissions'
-      });
+      errorResponse(res, 500, error.message || 'Failed to check permissions');
     }
   }
 
@@ -444,10 +376,7 @@ export class RbacController {
       const { checks } = req.body;
 
       if (!checks || !Array.isArray(checks)) {
-        return res.status(400).json({
-          success: false,
-          error: 'Permission checks array is required'
-        });
+        return errorResponse(res, 400, 'Permission checks array is required');
       }
 
       const hasPermission = await rbacService.hasAllPermissions(userId, checks);
@@ -461,10 +390,7 @@ export class RbacController {
       });
     } catch (error: any) {
       console.error('Check all permissions error:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message || 'Failed to check permissions'
-      });
+      errorResponse(res, 500, error.message || 'Failed to check permissions');
     }
   }
 
@@ -479,10 +405,7 @@ export class RbacController {
       });
     } catch (error: any) {
       console.error('Cleanup expired assignments error:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message || 'Failed to cleanup expired assignments'
-      });
+      errorResponse(res, 500, error.message || 'Failed to cleanup expired assignments');
     }
   }
 }

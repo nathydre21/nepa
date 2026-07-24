@@ -3,6 +3,7 @@ import { PrismaClient, UserStatus, UserRole } from '@prisma/client';
 import Joi from 'joi';
 import bcrypt from 'bcryptjs';
 import { invalidateUserCache, invalidateCacheByPattern, GraphQLCache, CachePresets } from '../middleware/cache';
+import { errorResponse } from '../utils/errorResponse';
 
 // User profile cache (in-memory, TTL 5 minutes)
 const userCache = new GraphQLCache({ ...CachePresets.production, ttl: 300 });
@@ -63,7 +64,7 @@ export class UserController {
     try {
       const { error, value } = searchSchema.validate(req.query);
       if (error) {
-        return res.status(400).json({ error: error.details[0].message });
+        return errorResponse(res, 400, error.details[0].message);
       }
 
       const { page, limit, search, role, status } = value;
@@ -129,7 +130,7 @@ export class UserController {
       });
     } catch (error) {
       console.error('Get all users error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      errorResponse(res, 500, 'Internal server error');
     }
   }
 
@@ -137,10 +138,7 @@ export class UserController {
     try {
       const { error, value } = idParamSchema.validate(req.params, { abortEarly: false });
       if (error) {
-        return res.status(400).json({ 
-          error: 'Validation failed', 
-          details: error.details.map(detail => detail.message) 
-        });
+        return errorResponse(res, 400, 'Validation failed');
       }
       const { id } = value;
 
@@ -183,7 +181,7 @@ export class UserController {
       });
 
       if (!user) {
-        return res.status(404).json({ error: 'User not found' });
+        return errorResponse(res, 404, 'User not found');
       }
 
       const response = { user };
@@ -191,7 +189,7 @@ export class UserController {
       res.json(response);
     } catch (error) {
       console.error('Get user by ID error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      errorResponse(res, 500, 'Internal server error');
     }
   }
 
@@ -199,7 +197,7 @@ export class UserController {
     try {
       const { error, value } = updateProfileSchema.validate(req.body);
       if (error) {
-        return res.status(400).json({ error: error.details[0].message });
+        return errorResponse(res, 400, error.details[0].message);
       }
 
       const user = (req as any).user;
@@ -215,7 +213,7 @@ export class UserController {
         });
 
         if (existingUser) {
-          return res.status(400).json({ error: 'Username already taken' });
+          return errorResponse(res, 400, 'Username already taken');
         }
       }
 
@@ -244,7 +242,7 @@ export class UserController {
       });
     } catch (error) {
       console.error('Update profile error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      errorResponse(res, 500, 'Internal server error');
     }
   }
 
@@ -252,7 +250,7 @@ export class UserController {
     try {
       const { error, value } = updatePreferencesSchema.validate(req.body);
       if (error) {
-        return res.status(400).json({ error: error.details[0].message });
+        return errorResponse(res, 400, error.details[0].message);
       }
 
       const user = (req as any).user;
@@ -275,7 +273,7 @@ export class UserController {
       });
     } catch (error) {
       console.error('Update preferences error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      errorResponse(res, 500, 'Internal server error');
     }
   }
 
@@ -299,7 +297,7 @@ export class UserController {
       res.json(response);
     } catch (error) {
       console.error('Get preferences error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      errorResponse(res, 500, 'Internal server error');
     }
   }
 
@@ -307,7 +305,7 @@ export class UserController {
     try {
       const { error, value } = changePasswordSchema.validate(req.body);
       if (error) {
-        return res.status(400).json({ error: error.details[0].message });
+        return errorResponse(res, 400, error.details[0].message);
       }
 
       const user = (req as any).user;
@@ -319,13 +317,13 @@ export class UserController {
       });
 
       if (!currentUser?.passwordHash) {
-        return res.status(400).json({ error: 'No password set for this account' });
+        return errorResponse(res, 400, 'No password set for this account');
       }
 
       // Verify current password
       const isValidPassword = await bcrypt.compare(value.currentPassword, currentUser.passwordHash);
       if (!isValidPassword) {
-        return res.status(400).json({ error: 'Current password is incorrect' });
+        return errorResponse(res, 400, 'Current password is incorrect');
       }
 
       // Hash new password
@@ -343,7 +341,7 @@ export class UserController {
       res.json({ message: 'Password changed successfully' });
     } catch (error) {
       console.error('Change password error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      errorResponse(res, 500, 'Internal server error');
     }
   }
 
@@ -352,19 +350,19 @@ export class UserController {
       const { id } = req.params;
       const { error, value } = updateUserRoleSchema.validate(req.body);
       if (error) {
-        return res.status(400).json({ error: error.details[0].message });
+        return errorResponse(res, 400, error.details[0].message);
       }
 
       const currentUser = (req as any).user;
 
       // Check if current user has permission to update roles
       if (currentUser.role === UserRole.USER) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
+        return errorResponse(res, 403, 'Insufficient permissions');
       }
 
       // Prevent users from promoting themselves to higher roles
       if (currentUser.role === UserRole.ADMIN && value.role === UserRole.SUPER_ADMIN) {
-        return res.status(403).json({ error: 'Cannot promote to Super Admin' });
+        return errorResponse(res, 403, 'Cannot promote to Super Admin');
       }
 
       const updatedUser = await prisma.user.update({
@@ -393,7 +391,7 @@ export class UserController {
       });
     } catch (error) {
       console.error('Update user role error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      errorResponse(res, 500, 'Internal server error');
     }
   }
 
@@ -419,7 +417,7 @@ export class UserController {
       res.json({ sessions });
     } catch (error) {
       console.error('Get user sessions error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      errorResponse(res, 500, 'Internal server error');
     }
   }
 
@@ -436,7 +434,7 @@ export class UserController {
       });
 
       if (!session) {
-        return res.status(404).json({ error: 'Session not found' });
+        return errorResponse(res, 404, 'Session not found');
       }
 
       await prisma.userSession.update({
@@ -450,7 +448,7 @@ export class UserController {
       res.json({ message: 'Session revoked successfully' });
     } catch (error) {
       console.error('Revoke session error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      errorResponse(res, 500, 'Internal server error');
     }
   }
 
@@ -458,17 +456,14 @@ export class UserController {
     try {
       const { error, value } = idParamSchema.validate(req.params, { abortEarly: false });
       if (error) {
-        return res.status(400).json({ 
-          error: 'Validation failed', 
-          details: error.details.map(detail => detail.message) 
-        });
+        return errorResponse(res, 400, 'Validation failed');
       }
       const { id } = value;
       const currentUser = (req as any).user;
 
       // Users can only delete themselves, admins can delete other users, super admins can delete anyone
       if (currentUser.role === UserRole.USER && currentUser.id !== id) {
-        return res.status(403).json({ error: 'Cannot delete other users' });
+        return errorResponse(res, 403, 'Cannot delete other users');
       }
 
       if (currentUser.role === UserRole.ADMIN && currentUser.id !== id) {
@@ -478,7 +473,7 @@ export class UserController {
         });
 
         if (targetUser?.role === UserRole.ADMIN || targetUser?.role === UserRole.SUPER_ADMIN) {
-          return res.status(403).json({ error: 'Cannot delete admin users' });
+          return errorResponse(res, 403, 'Cannot delete admin users');
         }
       }
 
@@ -505,7 +500,7 @@ export class UserController {
       res.json({ message: 'User deleted successfully' });
     } catch (error) {
       console.error('Delete user error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      errorResponse(res, 500, 'Internal server error');
     }
   }
 }

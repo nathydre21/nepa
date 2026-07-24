@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import RSS from 'rss';
 import { PrismaClient } from '@prisma/client';
+import { errorResponse } from '../utils/errorResponse';
 
 const prisma = new PrismaClient();
 
@@ -140,7 +141,7 @@ export class RssController {
       res.send(feed.xml());
     } catch (error) {
       console.error('Error generating payments RSS feed:', error);
-      res.status(500).json({ error: 'Failed to generate RSS feed' });
+      errorResponse(res, 500, 'Failed to generate RSS feed');
     }
   }
 
@@ -184,7 +185,7 @@ export class RssController {
       res.send(feed.xml());
     } catch (error) {
       console.error('Error generating bills RSS feed:', error);
-      res.status(500).json({ error: 'Failed to generate RSS feed' });
+      errorResponse(res, 500, 'Failed to generate RSS feed');
     }
   }
 
@@ -225,7 +226,7 @@ export class RssController {
       res.send(feed.xml());
     } catch (error) {
       console.error('Error generating reports RSS feed:', error);
-      res.status(500).json({ error: 'Failed to generate RSS feed' });
+      errorResponse(res, 500, 'Failed to generate RSS feed');
     }
   }
 
@@ -292,7 +293,7 @@ export class RssController {
       res.send(feed.xml());
     } catch (error) {
       console.error('Error generating activity RSS feed:', error);
-      res.status(500).json({ error: 'Failed to generate RSS feed' });
+      errorResponse(res, 500, 'Failed to generate RSS feed');
     }
   }
 
@@ -305,7 +306,7 @@ export class RssController {
       const limit = parseInt(req.query.limit as string) || 50;
       
       if (!userId) {
-        return res.status(400).json({ error: 'User ID is required' });
+        return errorResponse(res, 400, 'User ID is required');
       }
 
       // Get user's recent activities
@@ -367,7 +368,7 @@ export class RssController {
       res.send(feed.xml());
     } catch (error) {
       console.error('Error generating user activity RSS feed:', error);
-      res.status(500).json({ error: 'Failed to generate RSS feed' });
+      errorResponse(res, 500, 'Failed to generate RSS feed');
     }
   }
 }
