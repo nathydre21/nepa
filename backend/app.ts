@@ -42,6 +42,7 @@ import ConnectionPoolManager from './databases/ConnectionPoolManager';
 import scheduledPaymentRoutes from './routes/scheduledPaymentRoutes';
 import { scheduledPaymentService } from './services/ScheduledPaymentService';
 import { initializeCacheSystem } from './services/cache/CacheInitializer';
+import { requestTimeout } from './middleware/requestTimeout';
 
 const app = express();
 
@@ -95,6 +96,9 @@ if (appConfig.enableDbPoolMonitoring) {
 // 1. Comprehensive logging middleware (should be first)
 app.use(...loggingMiddleware);
 configureSecurity(app);
+
+// 2. Global request timeout (prevents hung Stellar/network calls)
+app.use(requestTimeout(30000));
 
 // 4. Body Parsing
 app.use(express.json({ limit: '10kb' })); // Limit body size for security
