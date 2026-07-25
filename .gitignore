@@ -108,5 +108,10 @@ test-data/
 # Exclude Kiro files and folders
 .kiro/
 
+# PR and documentation files
+PR_*.md
+GITHUB_ISSUES.md
+TEST_IMPLEMENTATION_SUMMARY.md
+PHASE_1_TESTING_COMPLETE.md
 # PR description files
 PR_*.md
