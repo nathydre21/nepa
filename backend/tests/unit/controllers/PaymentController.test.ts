@@ -166,7 +166,6 @@ describe('PaymentController', () => {
 
     it('should return error for unauthenticated user', async () => {
       req.body = validPaymentData;
-      // No user set on request
 
       await processPayment(req, res);
 
@@ -300,7 +299,7 @@ describe('PaymentController', () => {
 
     it('should use default limit and offset values', async () => {
       (req as any).user = createMockAuth('user-123');
-      req.query = {}; // No limit or offset provided
+      req.query = {};
 
       const mockPaymentHistory = { payments: [], pagination: { limit: 10, offset: 0, total: 0 } };
       mockBillingService.getPaymentHistory.mockResolvedValue(mockPaymentHistory);
@@ -311,7 +310,6 @@ describe('PaymentController', () => {
     });
 
     it('should return error for unauthenticated user', async () => {
-      // No user set on request
       req.query = { limit: '5', offset: '10' };
 
       await getPaymentHistory(req, res);
@@ -371,7 +369,6 @@ describe('PaymentController', () => {
 
     it('should return error for unauthenticated user', async () => {
       req.body = validValidationData;
-      // No user set on request
 
       await validatePayment(req, res);
 
@@ -395,11 +392,11 @@ describe('PaymentController', () => {
 
     it('should return error for bill belonging to different user', async () => {
       req.body = validValidationData;
-      (req as any).user = createMockAuth('user-456'); // Different user
+      (req as any).user = createMockAuth('user-456');
 
       const billForDifferentUser = {
         ...mockBill,
-        userId: 'user-789' // Yet another user
+        userId: 'user-789'
       };
 
       mockBillingService.getBill.mockResolvedValue(billForDifferentUser);
@@ -446,7 +443,7 @@ describe('PaymentController', () => {
     it('should return error for amount exceeding total due', async () => {
       req.body = {
         ...validValidationData,
-        amount: 200 // More than bill amount + late fee
+        amount: 200
       };
       (req as any).user = createMockAuth('user-123');
 

@@ -1,17 +1,18 @@
-// TODO: Fix missing billing-client Prisma client
-// import { PrismaClient as BillingPrismaClient } from '../../node_modules/.prisma/billing-client';
+import { PrismaClient as BillingPrismaClient } from '../../node_modules/.prisma/billing-client';
 import { buildOptimizedDatabaseUrl } from './urlOptimizer';
 
-// Temporarily disabled to get server running
-// const billingClient = new BillingPrismaClient({
-//   datasources: {
-//     db: {
-//       url: buildOptimizedDatabaseUrl(process.env.BILLING_SERVICE_DATABASE_URL),
-//     },
-//   },
-// });
+const billingClient = new BillingPrismaClient({
+  datasources: {
+    db: {
+      url: buildOptimizedDatabaseUrl(process.env.BILLING_SERVICE_DATABASE_URL || ''),
+    },
+  },
+  log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+});
 
-// Mock billing client for now
-const billingClient = null;
+// Graceful shutdown
+process.on('beforeExit', async () => {
+  await billingClient.$disconnect();
+});
 
 export default billingClient;
