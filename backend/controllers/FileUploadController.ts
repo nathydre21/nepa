@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { FileStorageService } from '../FileStorageService';
 import { upload } from '../upload';
 import { AuthenticatedRequest } from '../types';
+import { errorResponse } from '../utils/errorResponse';
 
 const fileStorageService = new FileStorageService();
 
@@ -9,11 +10,11 @@ const fileStorageService = new FileStorageService();
 export const uploadSingleFile = async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ error: 'No file provided' });
+      return errorResponse(res, 400, 'No file provided');
     }
 
     if (!req.user?.id) {
-      return res.status(401).json({ error: 'User not authenticated' });
+      return errorResponse(res, 401, 'User not authenticated');
     }
 
     const options = {
@@ -42,9 +43,7 @@ export const uploadSingleFile = async (req: AuthenticatedRequest, res: Response)
     });
   } catch (error) {
     console.error('Upload error:', error);
-    res.status(500).json({ 
-      error: error instanceof Error ? error.message : 'Upload failed' 
-    });
+    errorResponse(res, 500, error instanceof Error ? error.message : 'Upload failed');
   }
 };
 
@@ -52,11 +51,11 @@ export const uploadSingleFile = async (req: AuthenticatedRequest, res: Response)
 export const uploadMultipleFiles = async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
-      return res.status(400).json({ error: 'No files provided' });
+      return errorResponse(res, 400, 'No files provided');
     }
 
     if (!req.user?.id) {
-      return res.status(401).json({ error: 'User not authenticated' });
+      return errorResponse(res, 401, 'User not authenticated');
     }
 
     const options = {
@@ -83,9 +82,7 @@ export const uploadMultipleFiles = async (req: AuthenticatedRequest, res: Respon
     });
   } catch (error) {
     console.error('Batch upload error:', error);
-    res.status(500).json({ 
-      error: error instanceof Error ? error.message : 'Batch upload failed' 
-    });
+    errorResponse(res, 500, error instanceof Error ? error.message : 'Batch upload failed');
   }
 };
 
@@ -96,13 +93,13 @@ export const getUploadProgress = (req: AuthenticatedRequest, res: Response) => {
     const progress = fileStorageService.getUploadProgress(fileId);
 
     if (!progress) {
-      return res.status(404).json({ error: 'Upload not found' });
+      return errorResponse(res, 404, 'Upload not found');
     }
 
     res.json(progress);
   } catch (error) {
     console.error('Get progress error:', error);
-    res.status(500).json({ error: 'Failed to get upload progress' });
+    errorResponse(res, 500, 'Failed to get upload progress');
   }
 };
 
@@ -114,7 +111,7 @@ export const pauseUpload = (req: AuthenticatedRequest, res: Response) => {
     res.json({ success: true, message: 'Upload paused' });
   } catch (error) {
     console.error('Pause upload error:', error);
-    res.status(500).json({ error: 'Failed to pause upload' });
+    errorResponse(res, 500, 'Failed to pause upload');
   }
 };
 
@@ -126,7 +123,7 @@ export const resumeUpload = (req: AuthenticatedRequest, res: Response) => {
     res.json({ success: true, message: 'Upload resumed' });
   } catch (error) {
     console.error('Resume upload error:', error);
-    res.status(500).json({ error: 'Failed to resume upload' });
+    errorResponse(res, 500, 'Failed to resume upload');
   }
 };
 
@@ -134,14 +131,14 @@ export const resumeUpload = (req: AuthenticatedRequest, res: Response) => {
 export const getUserUploads = (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.user?.id) {
-      return res.status(401).json({ error: 'User not authenticated' });
+      return errorResponse(res, 401, 'User not authenticated');
     }
 
     const uploads = fileStorageService.getUserUploads(req.user.id);
     res.json(uploads);
   } catch (error) {
     console.error('Get user uploads error:', error);
-    res.status(500).json({ error: 'Failed to get user uploads' });
+    errorResponse(res, 500, 'Failed to get user uploads');
   }
 };
 
@@ -151,16 +148,14 @@ export const deleteFile = async (req: AuthenticatedRequest, res: Response) => {
     const { documentId } = req.params;
 
     if (!req.user?.id) {
-      return res.status(401).json({ error: 'User not authenticated' });
+      return errorResponse(res, 401, 'User not authenticated');
     }
 
     await fileStorageService.deleteFile(documentId, req.user.id);
     res.json({ success: true, message: 'File deleted successfully' });
   } catch (error) {
     console.error('Delete file error:', error);
-    res.status(500).json({ 
-      error: error instanceof Error ? error.message : 'Failed to delete file' 
-    });
+    errorResponse(res, 500, error instanceof Error ? error.message : 'Failed to delete file');
   }
 };
 

@@ -3,6 +3,7 @@ import { webhookService } from '../WebhookService';
 import { webhookMonitor } from '../WebhookMonitor';
 import { logger } from '../logger';
 import prisma from '../prismaClient';
+import { errorResponse } from '../utils/errorResponse';
 
 /**
  * Webhook Management API Controller
@@ -38,10 +39,7 @@ export class WebhookManagementController {
       });
     } catch (error) {
       logger.error(`Error getting dashboard: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -59,18 +57,12 @@ export class WebhookManagementController {
       });
 
       if (!webhook) {
-        res.status(404).json({
-          success: false,
-          error: 'Webhook not found',
-        });
+        errorResponse(res, 404, 'Webhook not found');
         return;
       }
 
       if (webhook.userId !== userId) {
-        res.status(403).json({
-          success: false,
-          error: 'Unauthorized',
-        });
+        errorResponse(res, 403, 'Unauthorized');
         return;
       }
 
@@ -93,10 +85,7 @@ export class WebhookManagementController {
       });
     } catch (error) {
       logger.error(`Error getting webhook details: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -121,10 +110,7 @@ export class WebhookManagementController {
       });
     } catch (error) {
       logger.error(`Error getting performance report: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -148,10 +134,7 @@ export class WebhookManagementController {
       });
     } catch (error) {
       logger.error(`Error getting failed deliveries: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -170,10 +153,7 @@ export class WebhookManagementController {
       });
 
       if (!webhook || webhook.userId !== userId) {
-        res.status(403).json({
-          success: false,
-          error: 'Unauthorized',
-        });
+        errorResponse(res, 403, 'Unauthorized');
         return;
       }
 
@@ -202,10 +182,7 @@ export class WebhookManagementController {
       });
     } catch (error) {
       logger.error(`Error bulk retrying failed events: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -250,10 +227,7 @@ export class WebhookManagementController {
       }
     } catch (error) {
       logger.error(`Error exporting webhook data: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -294,10 +268,7 @@ export class WebhookManagementController {
       });
     } catch (error) {
       logger.error(`Error getting analytics: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 }
@@ -321,10 +292,7 @@ export class WebhookTestingController {
       });
 
       if (!webhook || webhook.userId !== userId) {
-        res.status(403).json({
-          success: false,
-          error: 'Unauthorized',
-        });
+        errorResponse(res, 403, 'Unauthorized');
         return;
       }
 
@@ -343,10 +311,7 @@ export class WebhookTestingController {
       ];
 
       if (!validEvents.includes(eventType)) {
-        res.status(400).json({
-          success: false,
-          error: `Invalid event type: ${eventType}`,
-        });
+        errorResponse(res, 400, `Invalid event type: ${eventType}`);
         return;
       }
 
@@ -359,10 +324,7 @@ export class WebhookTestingController {
       });
     } catch (error) {
       logger.error(`Error creating test event: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -382,10 +344,7 @@ export class WebhookTestingController {
       });
 
       if (!webhook || webhook.userId !== userId) {
-        res.status(403).json({
-          success: false,
-          error: 'Unauthorized',
-        });
+        errorResponse(res, 403, 'Unauthorized');
         return;
       }
 
@@ -404,10 +363,7 @@ export class WebhookTestingController {
       });
     } catch (error) {
       logger.error(`Error getting test history: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -426,10 +382,7 @@ export class WebhookTestingController {
       });
 
       if (!webhook || webhook.userId !== userId) {
-        res.status(403).json({
-          success: false,
-          error: 'Unauthorized',
-        });
+        errorResponse(res, 403, 'Unauthorized');
         return;
       }
 
@@ -442,10 +395,7 @@ export class WebhookTestingController {
       });
     } catch (error) {
       logger.error(`Error testing webhook with payload: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -467,18 +417,12 @@ export class WebhookTestingController {
       });
 
       if (!event) {
-        res.status(404).json({
-          success: false,
-          error: 'Event not found',
-        });
+        errorResponse(res, 404, 'Event not found');
         return;
       }
 
       if (event.webhook.userId !== userId) {
-        res.status(403).json({
-          success: false,
-          error: 'Unauthorized',
-        });
+        errorResponse(res, 403, 'Unauthorized');
         return;
       }
 
@@ -508,10 +452,7 @@ export class WebhookTestingController {
       });
     } catch (error) {
       logger.error(`Error debugging delivery attempt: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 }

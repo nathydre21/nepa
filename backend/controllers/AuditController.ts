@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { auditService, AuditSearchFilters, ComplianceReportOptions, AuditAction, AuditSeverity, AuditStatus } from '../services/AuditService';
 import { logger } from '../services/logger';
 import { authorize } from '../middleware/authentication';
+import { errorResponse } from '../utils/errorResponse';
 
 export class AuditController {
   /**
@@ -54,10 +55,7 @@ export class AuditController {
       if (startDate) {
         filters.startDate = new Date(startDate as string);
         if (isNaN(filters.startDate.getTime())) {
-          res.status(400).json({
-            success: false,
-            error: 'Invalid startDate format'
-          });
+          errorResponse(res, 400, 'Invalid startDate format');
           return;
         }
       }
@@ -65,10 +63,7 @@ export class AuditController {
       if (endDate) {
         filters.endDate = new Date(endDate as string);
         if (isNaN(filters.endDate.getTime())) {
-          res.status(400).json({
-            success: false,
-            error: 'Invalid endDate format'
-          });
+          errorResponse(res, 400, 'Invalid endDate format');
           return;
         }
       }
@@ -88,10 +83,7 @@ export class AuditController {
 
     } catch (error) {
       logger.error('Failed to search audit logs:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to search audit logs'
-      });
+      errorResponse(res, 500, 'Failed to search audit logs');
     }
   }
 
@@ -109,10 +101,7 @@ export class AuditController {
       const isAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPER_ADMIN';
       
       if (!isAdmin && currentUser.id !== userId) {
-        res.status(403).json({
-          success: false,
-          error: 'Insufficient permissions to view user timeline'
-        });
+        errorResponse(res, 403, 'Insufficient permissions to view user timeline');
         return;
       }
 
@@ -122,10 +111,7 @@ export class AuditController {
       if (startDate) {
         start = new Date(startDate as string);
         if (isNaN(start.getTime())) {
-          res.status(400).json({
-            success: false,
-            error: 'Invalid startDate format'
-          });
+          errorResponse(res, 400, 'Invalid startDate format');
           return;
         }
       }
@@ -133,10 +119,7 @@ export class AuditController {
       if (endDate) {
         end = new Date(endDate as string);
         if (isNaN(end.getTime())) {
-          res.status(400).json({
-            success: false,
-            error: 'Invalid endDate format'
-          });
+          errorResponse(res, 400, 'Invalid endDate format');
           return;
         }
       }
@@ -150,10 +133,7 @@ export class AuditController {
 
     } catch (error) {
       logger.error('Failed to get user timeline:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to get user timeline'
-      });
+      errorResponse(res, 500, 'Failed to get user timeline');
     }
   }
 
@@ -176,10 +156,7 @@ export class AuditController {
 
       // Validate required fields
       if (!reportType || !startDate || !endDate) {
-        res.status(400).json({
-          success: false,
-          error: 'reportType, startDate, and endDate are required'
-        });
+        errorResponse(res, 400, 'reportType, startDate, and endDate are required');
         return;
       }
 
@@ -188,28 +165,19 @@ export class AuditController {
       const end = new Date(endDate);
 
       if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-        res.status(400).json({
-          success: false,
-          error: 'Invalid date format'
-        });
+        errorResponse(res, 400, 'Invalid date format');
         return;
       }
 
       if (start >= end) {
-        res.status(400).json({
-          success: false,
-          error: 'startDate must be before endDate'
-        });
+        errorResponse(res, 400, 'startDate must be before endDate');
         return;
       }
 
       // Validate date range (max 1 year)
       const maxRange = 365 * 24 * 60 * 60 * 1000; // 1 year in milliseconds
       if (end.getTime() - start.getTime() > maxRange) {
-        res.status(400).json({
-          success: false,
-          error: 'Date range cannot exceed 1 year'
-        });
+        errorResponse(res, 400, 'Date range cannot exceed 1 year');
         return;
       }
 
@@ -234,10 +202,7 @@ export class AuditController {
 
     } catch (error) {
       logger.error('Failed to generate compliance report:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to generate compliance report'
-      });
+      errorResponse(res, 500, 'Failed to generate compliance report');
     }
   }
 
@@ -267,10 +232,7 @@ export class AuditController {
           startDate.setDate(startDate.getDate() - 90);
           break;
         default:
-          res.status(400).json({
-            success: false,
-            error: 'Invalid period. Use 1d, 7d, 30d, or 90d'
-          });
+          errorResponse(res, 400, 'Invalid period. Use 1d, 7d, 30d, or 90d');
           return;
       }
 
@@ -329,10 +291,7 @@ export class AuditController {
 
     } catch (error) {
       logger.error('Failed to get audit stats:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to get audit stats'
-      });
+      errorResponse(res, 500, 'Failed to get audit stats');
     }
   }
 
@@ -352,10 +311,7 @@ export class AuditController {
       } = req.query;
 
       if (!['json', 'csv'].includes(format as string)) {
-        res.status(400).json({
-          success: false,
-          error: 'Invalid format. Use json or csv'
-        });
+        errorResponse(res, 400, 'Invalid format. Use json or csv');
         return;
       }
 
@@ -366,10 +322,7 @@ export class AuditController {
       if (startDate) {
         filters.startDate = new Date(startDate as string);
         if (isNaN(filters.startDate.getTime())) {
-          res.status(400).json({
-            success: false,
-            error: 'Invalid startDate format'
-          });
+          errorResponse(res, 400, 'Invalid startDate format');
           return;
         }
       }
@@ -377,10 +330,7 @@ export class AuditController {
       if (endDate) {
         filters.endDate = new Date(endDate as string);
         if (isNaN(filters.endDate.getTime())) {
-          res.status(400).json({
-            success: false,
-            error: 'Invalid endDate format'
-          });
+          errorResponse(res, 400, 'Invalid endDate format');
           return;
         }
       }
@@ -432,10 +382,7 @@ export class AuditController {
 
     } catch (error) {
       logger.error('Failed to export audit logs:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to export audit logs'
-      });
+      errorResponse(res, 500, 'Failed to export audit logs');
     }
   }
 }

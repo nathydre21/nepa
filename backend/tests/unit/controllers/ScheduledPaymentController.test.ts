@@ -85,10 +85,7 @@ describe('ScheduledPaymentController', () => {
       await scheduledPaymentController.create(req, res);
 
       expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith({
-        status: 401,
-        error: 'Authentication required',
-      });
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Authentication required' });
     });
 
     it('should return 400 for missing required fields', async () => {
@@ -98,10 +95,7 @@ describe('ScheduledPaymentController', () => {
       await scheduledPaymentController.create(req, res);
 
       expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith({
-        status: 400,
-        error: 'Missing required fields: billId, amount, paymentMethod, frequency, startDate',
-      });
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Missing required fields: billId, amount, paymentMethod, frequency, startDate' });
     });
 
     it('should return 400 for invalid frequency', async () => {
@@ -111,10 +105,7 @@ describe('ScheduledPaymentController', () => {
       await scheduledPaymentController.create(req, res);
 
       expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith({
-        status: 400,
-        error: 'Invalid frequency value',
-      });
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Invalid frequency value' });
     });
 
     it('should return 400 for zero amount', async () => {
@@ -124,10 +115,7 @@ describe('ScheduledPaymentController', () => {
       await scheduledPaymentController.create(req, res);
 
       expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith({
-        status: 400,
-        error: 'Amount must be greater than 0',
-      });
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Amount must be greater than 0' });
     });
 
     it('should return 400 for negative amount', async () => {
@@ -137,10 +125,7 @@ describe('ScheduledPaymentController', () => {
       await scheduledPaymentController.create(req, res);
 
       expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith({
-        status: 400,
-        error: 'Amount must be greater than 0',
-      });
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Amount must be greater than 0' });
     });
 
     it('should handle service errors with 500', async () => {
@@ -152,11 +137,7 @@ describe('ScheduledPaymentController', () => {
       await scheduledPaymentController.create(req, res);
 
       expect(res.status).toHaveBeenCalledWith(500);
-      expect(res.json).toHaveBeenCalledWith({
-        status: 500,
-        error: 'Failed to create scheduled payment',
-        message: 'DB error',
-      });
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Failed to create scheduled payment' });
     });
 
     it('should default maxRetries to 3 when not provided', async () => {
@@ -249,10 +230,7 @@ describe('ScheduledPaymentController', () => {
       await scheduledPaymentController.getAll(req, res);
 
       expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith({
-        status: 401,
-        error: 'Authentication required',
-      });
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Authentication required' });
     });
 
     it('should handle service errors with 500', async () => {
@@ -314,10 +292,7 @@ describe('ScheduledPaymentController', () => {
       await scheduledPaymentController.getById(req, res);
 
       expect(res.status).toHaveBeenCalledWith(404);
-      expect(res.json).toHaveBeenCalledWith({
-        status: 404,
-        error: 'Scheduled payment not found',
-      });
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Scheduled payment not found' });
     });
 
     it('should return 404 when payment belongs to different user', async () => {
@@ -359,10 +334,7 @@ describe('ScheduledPaymentController', () => {
       await scheduledPaymentController.pause(req, res);
 
       expect(res.status).toHaveBeenCalledWith(404);
-      expect(res.json).toHaveBeenCalledWith({
-        status: 404,
-        error: 'Scheduled payment not found or already paused',
-      });
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Scheduled payment not found or already paused' });
     });
 
     it('should return 401 for unauthenticated user', async () => {
@@ -401,10 +373,7 @@ describe('ScheduledPaymentController', () => {
       await scheduledPaymentController.resume(req, res);
 
       expect(res.status).toHaveBeenCalledWith(404);
-      expect(res.json).toHaveBeenCalledWith({
-        status: 404,
-        error: 'Scheduled payment not found or not paused',
-      });
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Scheduled payment not found or not paused' });
     });
   });
 
@@ -435,10 +404,7 @@ describe('ScheduledPaymentController', () => {
       await scheduledPaymentController.cancel(req, res);
 
       expect(res.status).toHaveBeenCalledWith(404);
-      expect(res.json).toHaveBeenCalledWith({
-        status: 404,
-        error: 'Scheduled payment not found or already cancelled',
-      });
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Scheduled payment not found or already cancelled' });
     });
   });
 

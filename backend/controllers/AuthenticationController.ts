@@ -3,6 +3,7 @@ import { AuthenticationService, LoginCredentials, RegisterData } from '../servic
 import { TwoFactorMethod } from '@prisma/client';
 import Joi from 'joi';
 import logger from '../services/logger';
+import { errorResponse } from '../utils/errorResponse';
 
 // Initialize authentication service instance
 const authService = new AuthenticationService();
@@ -51,7 +52,7 @@ export class AuthenticationController {
           ip: req.ip,
           error: error.details[0].message
         });
-        return res.status(400).json({ error: error.details[0].message });
+        return errorResponse(res, 400, error.details[0].message);
       }
 
       // Call authentication service to register user
@@ -82,7 +83,7 @@ export class AuthenticationController {
           ip: req.ip,
           error: result.error
         });
-        res.status(400).json({ error: result.error });
+        errorResponse(res, 400, result.error);
       }
     } catch (error) {
       logger.logError(error as Error, {
@@ -90,7 +91,7 @@ export class AuthenticationController {
         url: req.url,
         ip: req.ip
       });
-      res.status(500).json({ error: 'Internal server error' });
+      errorResponse(res, 500, 'Internal server error');
     }
   }
 
@@ -110,7 +111,7 @@ export class AuthenticationController {
           ip: req.ip,
           error: error.details[0].message
         });
-        return res.status(400).json({ error: error.details[0].message });
+        return errorResponse(res, 400, error.details[0].message);
       }
 
       // Get user agent and IP for audit
@@ -148,6 +149,7 @@ export class AuthenticationController {
           ip: req.ip,
           email: value.email
         });
+        // Not an error response — challenge payload for 2FA continuation
         res.status(200).json({
           requiresTwoFactor: true,
           twoFactorMethods: result.twoFactorMethods,
@@ -161,7 +163,7 @@ export class AuthenticationController {
           email: value.email,
           error: result.error
         });
-        res.status(401).json({ error: result.error });
+        errorResponse(res, 401, result.error);
       }
     } catch (error) {
       logger.logError(error as Error, {
@@ -169,7 +171,7 @@ export class AuthenticationController {
         url: req.url,
         ip: req.ip
       });
-      res.status(500).json({ error: 'Internal server error' });
+      errorResponse(res, 500, 'Internal server error');
     }
   }
 
@@ -189,7 +191,7 @@ export class AuthenticationController {
           ip: req.ip,
           error: error.details[0].message
         });
-        return res.status(400).json({ error: error.details[0].message });
+        return errorResponse(res, 400, error.details[0].message);
       }
 
       // Get user agent and IP for audit
@@ -228,7 +230,7 @@ export class AuthenticationController {
           walletAddress: value.walletAddress,
           error: result.error
         });
-        res.status(401).json({ error: result.error });
+        errorResponse(res, 401, result.error);
       }
     } catch (error) {
       logger.logError(error as Error, {
@@ -236,7 +238,7 @@ export class AuthenticationController {
         url: req.url,
         ip: req.ip
       });
-      res.status(500).json({ error: 'Internal server error' });
+      errorResponse(res, 500, 'Internal server error');
     }
   }
 
@@ -255,7 +257,7 @@ export class AuthenticationController {
           url: req.url,
           ip: req.ip
         });
-        return res.status(400).json({ error: 'Refresh token required' });
+        return errorResponse(res, 400, 'Refresh token required');
       }
 
       // Call authentication service to refresh tokens
@@ -286,7 +288,7 @@ export class AuthenticationController {
           ip: req.ip,
           error: result.error
         });
-        res.status(401).json({ error: result.error });
+        errorResponse(res, 401, result.error);
       }
     } catch (error) {
       logger.logError(error as Error, {
@@ -294,7 +296,7 @@ export class AuthenticationController {
         url: req.url,
         ip: req.ip
       });
-      res.status(500).json({ error: 'Internal server error' });
+      errorResponse(res, 500, 'Internal server error');
     }
   }
 
@@ -313,7 +315,7 @@ export class AuthenticationController {
           url: req.url,
           ip: req.ip
         });
-        return res.status(400).json({ error: 'Token required' });
+        return errorResponse(res, 400, 'Token required');
       }
 
       // Call authentication service to logout
@@ -333,7 +335,7 @@ export class AuthenticationController {
           url: req.url,
           ip: req.ip
         });
-        res.status(400).json({ error: 'Logout failed' });
+        errorResponse(res, 400, 'Logout failed');
       }
     } catch (error) {
       logger.logError(error as Error, {
@@ -341,7 +343,7 @@ export class AuthenticationController {
         url: req.url,
         ip: req.ip
       });
-      res.status(500).json({ error: 'Internal server error' });
+      errorResponse(res, 500, 'Internal server error');
     }
   }
 
@@ -385,7 +387,7 @@ export class AuthenticationController {
         url: req.url,
         ip: req.ip
       });
-      res.status(500).json({ error: 'Internal server error' });
+      errorResponse(res, 500, 'Internal server error');
     }
   }
 
@@ -405,7 +407,7 @@ export class AuthenticationController {
           ip: req.ip,
           error: error.details[0].message
         });
-        return res.status(400).json({ error: error.details[0].message });
+        return errorResponse(res, 400, error.details[0].message);
       }
 
       const user = (req as any).user;
@@ -419,7 +421,7 @@ export class AuthenticationController {
           userId: user.id,
           error: result.error
         });
-        return res.status(400).json({ error: result.error });
+        return errorResponse(res, 400, result.error);
       }
 
       logger.info('2FA enabled successfully', {
@@ -441,7 +443,7 @@ export class AuthenticationController {
         url: req.url,
         ip: req.ip
       });
-      res.status(500).json({ error: 'Internal server error' });
+      errorResponse(res, 500, 'Internal server error');
     }
   }
 
@@ -461,7 +463,7 @@ export class AuthenticationController {
           ip: req.ip,
           error: error.details[0].message
         });
-        return res.status(400).json({ error: error.details[0].message });
+        return errorResponse(res, 400, error.details[0].message);
       }
 
       const user = (req as any).user;
@@ -482,7 +484,7 @@ export class AuthenticationController {
           ip: req.ip,
           userId: user.id
         });
-        res.status(400).json({ error: 'Invalid two-factor code' });
+        errorResponse(res, 400, 'Invalid two-factor code');
       }
     } catch (error) {
       logger.logError(error as Error, {
@@ -490,7 +492,7 @@ export class AuthenticationController {
         url: req.url,
         ip: req.ip
       });
-      res.status(500).json({ error: 'Internal server error' });
+      errorResponse(res, 500, 'Internal server error');
     }
   }
 
@@ -512,7 +514,7 @@ export class AuthenticationController {
           userId: user.id,
           error: result.error
         });
-        return res.status(400).json({ error: result.error });
+        return errorResponse(res, 400, result.error);
       }
 
       logger.info('2FA disabled successfully', {
@@ -528,7 +530,7 @@ export class AuthenticationController {
         url: req.url,
         ip: req.ip
       });
-      res.status(500).json({ error: 'Internal server error' });
+      errorResponse(res, 500, 'Internal server error');
     }
   }
 
@@ -547,7 +549,7 @@ export class AuthenticationController {
           url: req.url,
           ip: req.ip
         });
-        return res.status(400).json({ error: 'Token required' });
+        return errorResponse(res, 400, 'Token required');
       }
 
       // Call authentication service to get token status
@@ -560,11 +562,7 @@ export class AuthenticationController {
           ip: req.ip,
           error: status.error
         });
-        return res.status(401).json({ 
-          error: status.error,
-          valid: status.valid,
-          warningLevel: status.warningLevel
-        });
+        return errorResponse(res, 401, status.error);
       }
 
       logger.info('Token status retrieved', {
@@ -591,7 +589,7 @@ export class AuthenticationController {
         url: req.url,
         ip: req.ip
       });
-      res.status(500).json({ error: 'Internal server error' });
+      errorResponse(res, 500, 'Internal server error');
     }
   }
 }
