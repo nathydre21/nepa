@@ -6,6 +6,7 @@ import { abuseDetector } from '../middleware/abuseDetection';
 import { invalidateUserCache, invalidateCacheByPattern } from '../middleware/cache';
 import { Server, TransactionBuilder, Networks, BASE_FEE, Asset, Transaction } from 'stellar-sdk';
 import { getCacheManager } from '../services/RedisCacheManager';
+import { logger } from '../logger';
 
 const billingService = new BillingService();
 
@@ -331,7 +332,7 @@ export const processPayment = async (req: Request, res: Response) => {
         await cacheManager.set(`transaction:${transactionId}`, transactionStatus, { ttl: TRANSACTION_TTL, tags: ['transaction', `user:${userId}`] });
 
       } catch (stellarError: any) {
-        console.error('Stellar payment error:', stellarError);
+        logger.error('Stellar payment error', { error: stellarError.message, transactionId });
         transactionStatus.status = 'failed';
         transactionStatus.errorMessage = stellarError.message || 'Stellar transaction failed';
         await cacheManager.set(`transaction:${transactionId}`, transactionStatus, { ttl: TRANSACTION_TTL, tags: ['transaction', `user:${userId}`] });
@@ -375,7 +376,7 @@ export const processPayment = async (req: Request, res: Response) => {
     });
     
   } catch (error: any) {
-    console.error('Payment processing error:', error);
+    logger.error('Payment processing error', { error: error.message, transactionId });
     
     // Update transaction status to failed (persist to Redis)
     try {
