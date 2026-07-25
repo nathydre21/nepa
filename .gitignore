@@ -115,3 +115,6 @@ TEST_IMPLEMENTATION_SUMMARY.md
 PHASE_1_TESTING_COMPLETE.md
 # PR description files
 PR_*.md
+
+# Deprecated frontend
+nepa-frontend/package-lock.json
