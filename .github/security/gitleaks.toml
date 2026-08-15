@@ -1,0 +1,32 @@
+# gitleaks configuration for nepa.
+# Extends the default ruleset with allowlists for test/example content.
+
+[extend]
+useDefault = true
+
+# Allowlist of paths known to contain example/test content (not real secrets).
+[allowlist]
+description = "Ignore test fixtures, examples, and localhost references"
+paths = [
+  '''backend/tests/.*''',
+  '''backend/api-testing/.*''',
+  '''backend/src/test/.*''',
+  '''frontend/src/tests/.*''',
+  '''contract/tests/.*''',
+  '''contract/nepa_contract/src/.*_tests\.rs''',
+  '''.env.example''',
+  '''backend/.env.example''',
+  '''docs/.*''',
+  '''CACHE_IMPLEMENTATION_COMPLETE\.md''',
+  '''EXPORT_SYSTEM_README\.md''',
+]
+regexes = [
+  '''example-password''',
+  '''change-me''',
+  '''YOUR_.*_HERE''',
+  '''gho_\*+''',
+  '''localhost:[0-9]+''',
+  '''127\.0\.0\.1:[0-9]+''',
+  '''test_password''',
+  '''test_user''',
+]

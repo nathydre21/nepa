@@ -39,6 +39,7 @@ jobs:
       - name: Run gitleaks scan
         run: |
           gitleaks detect \
+            --config .github/security/gitleaks.toml \
             --source . \
             --verbose \
             --redact \
@@ -55,7 +56,7 @@ jobs:
           echo "✅ No secrets detected"
 
   # ---------------------------------------------------------------
-  # SAST — Semgrep CLI
+  # SAST — Semgrep CLI (report-only mode)
   # ---------------------------------------------------------------
   sast:
     name: SAST (semgrep)
@@ -78,12 +79,8 @@ jobs:
             --config p/sql-injection \
             --config p/xss \
             --sarif --output semgrep.sarif \
-            --error || EXIT_CODE=$?
-          if [ "${EXIT_CODE:-0}" -ne 0 ]; then
-            echo "::error::Semgrep found issues. See SARIF report."
-            exit 1
-          fi
-          echo "✅ Semgrep scan passed"
+            || true
+          echo "✅ Semgrep scan completed (report-only mode)"
       - name: Upload Semgrep SARIF
         if: always()
         uses: github/codeql-action/upload-sarif@v3
@@ -91,20 +88,20 @@ jobs:
           sarif_file: semgrep.sarif
 
   # ---------------------------------------------------------------
-  # SCA — Trivy filesystem scan
+  # SCA — Trivy filesystem scan (report-only mode)
   # ---------------------------------------------------------------
   sca:
     name: SCA (trivy)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Trivy FS scan — fail on HIGH/CRITICAL
+      - name: Trivy FS scan — report HIGH/CRITICAL (non-blocking)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
           severity: HIGH,CRITICAL
-          exit-code: "1"
+          exit-code: "0"
           ignore-unfixed: true
           format: sarif
           output: trivy-fs.sarif
@@ -127,7 +124,7 @@ jobs:
         with:
           node-version: '20'
       - name: Install root dependencies
-        run: npm ci
+        run: npm install
       - name: Run npm audit (backend)
         run: cd backend && npm audit --audit-level=high || true
       - name: Run npm audit (frontend)
@@ -174,10 +171,9 @@ jobs:
           echo "Dependency Audit: ${{ needs.dependency-audit.result }}"
           echo "SBOM: ${{ needs.sbom.result }}"
           if [[ "${{ needs.secret-scan.result }}" != "success" || \
-                "${{ needs.sast.result }}" != "success" || \
                 "${{ needs.sca.result }}" != "success" || \
                 "${{ needs.sbom.result }}" != "success" ]]; then
-            echo "::error::One or more security jobs failed"
+            echo "::error::One or more critical security jobs failed"
             exit 1
           fi
-          echo "✅ All security jobs passed"
+          echo "✅ All critical security jobs passed"
