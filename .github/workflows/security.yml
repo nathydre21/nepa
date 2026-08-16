@@ -45,13 +45,13 @@ jobs:
             --redact \
             --report-format json \
             --report-path gitleaks-report.json || EXIT_CODE=$?
-          if [ -f gitleaks-report.json ] && [ -s gitleaks-report.json ]; then
-            echo "::error::Secrets detected by gitleaks. See report for details."
-            cat gitleaks-report.json
-            exit 1
-          fi
-          if [ "${EXIT_CODE:-0}" -ne 0 ]; then
-            exit 1
+          if [ -f gitleaks-report.json ]; then
+            CONTENT=$(cat gitleaks-report.json | tr -d '[:space:]')
+            if [ "$CONTENT" != "[]" ] && [ "$CONTENT" != "null" ] && [ -n "$CONTENT" ]; then
+              echo "::error::Secrets detected by gitleaks. See report for details."
+              cat gitleaks-report.json
+              exit 1
+            fi
           fi
           echo "✅ No secrets detected"
 
