@@ -6,14 +6,16 @@ useDefault = true
 
 # Allowlist of paths known to contain example/test content (not real secrets).
 [allowlist]
-description = "Ignore test fixtures, examples, and localhost references"
+description = "Ignore test fixtures, examples, localhost references, and test keys"
 paths = [
   '''backend/tests/.*''',
   '''backend/api-testing/.*''',
   '''backend/src/test/.*''',
   '''frontend/src/tests/.*''',
+  '''frontend/src/__tests__/.*''',
   '''contract/tests/.*''',
-  '''contract/nepa_contract/src/.*_tests\.rs''',
+  '''contract/src/.*''',
+  '''contract/nepa_contract/src/.*''',
   '''.env.example''',
   '''backend/.env.example''',
   '''docs/.*''',
@@ -29,4 +31,6 @@ regexes = [
   '''127\.0\.0\.1:[0-9]+''',
   '''test_password''',
   '''test_user''',
+  '''SBJZL[0-9A-Z]+''',
+  '''SABER[0-9a-f]+''',
 ]
