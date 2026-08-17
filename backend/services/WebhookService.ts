@@ -47,6 +47,8 @@ interface WebhookEvent {
 }
 
 export class WebhookService {
+  private isProcessingRetries = false;
+
   /**
    * Generate HMAC signature for webhook payload
    */
@@ -348,12 +350,11 @@ export class WebhookService {
             },
           });
 
-          // Schedule retry
-          setTimeout(() => {
-            this.attemptWebhookDelivery(webhook, event, payload, signature, attemptNumber + 1);
-          }, nextRetryDelay * 1000);
-
-          logger.info(`Webhook delivery failed. Retry scheduled for event ${event.id} in ${nextRetryDelay}s`);
+          // No in-process timer here: an in-process setTimeout doesn't
+          // survive a restart, silently dropping the retry. nextRetry is
+          // persisted instead, and WebhookQueueService's interval drains
+          // due events via processPendingRetries() below.
+          logger.info(`Webhook delivery failed. Retry due for event ${event.id} in ${nextRetryDelay}s`);
         } else {
           // Max retries exceeded
           await prisma.webhookEvent.update({
@@ -375,21 +376,92 @@ export class WebhookService {
   }
 
   /**
-   * Calculate retry delay based on policy
+   * Maximum retry delay, regardless of policy or attempt count. Without
+   * this, EXPONENTIAL backoff is unbounded (baseDelay * 2^attempt) and can
+   * reach multi-hour delays after a handful of failures.
+   */
+  private static readonly MAX_RETRY_DELAY_SECONDS = 3600; // 1 hour
+
+  /**
+   * Calculate retry delay based on policy, capped and jittered.
+   *
+   * Jitter uses the "equal jitter" pattern (delay in [capped/2, capped])
+   * rather than full jitter (delay in [0, capped]): it still spreads out
+   * retries to avoid a thundering herd when many events fail at once, but
+   * never lets the delay collapse toward zero the way full jitter can.
    */
   private calculateRetryDelay(
     policy: 'EXPONENTIAL' | 'LINEAR' | 'FIXED',
     attemptNumber: number,
     baseDelay: number
   ): number {
+    let delay: number;
     switch (policy) {
       case 'EXPONENTIAL':
-        return baseDelay * Math.pow(2, attemptNumber);
+        delay = baseDelay * Math.pow(2, attemptNumber);
+        break;
       case 'LINEAR':
-        return baseDelay * (attemptNumber + 1);
+        delay = baseDelay * (attemptNumber + 1);
+        break;
       case 'FIXED':
       default:
-        return baseDelay;
+        delay = baseDelay;
+        break;
+    }
+
+    const capped = Math.min(delay, WebhookService.MAX_RETRY_DELAY_SECONDS);
+    return capped / 2 + Math.random() * (capped / 2);
+  }
+
+  /**
+   * Resume delivery for WebhookEvents whose scheduled retry time has
+   * passed. This is what actually executes retries now that
+   * attemptWebhookDelivery only persists nextRetry instead of scheduling
+   * an in-process timer — called on an interval by WebhookQueueService.
+   */
+  async processPendingRetries(): Promise<void> {
+    if (this.isProcessingRetries) {
+      return; // previous batch still running; let it finish before starting another
+    }
+    this.isProcessingRetries = true;
+
+    try {
+      const dueEvents = await prisma.webhookEvent.findMany({
+        where: {
+          status: 'PENDING',
+          nextRetry: { lte: new Date() },
+        },
+        orderBy: { nextRetry: 'asc' },
+        take: 20,
+      });
+
+      for (const event of dueEvents) {
+        const webhook = await prisma.webhook.findUnique({
+          where: { id: event.webhookId },
+        });
+
+        if (!webhook || !webhook.isActive) {
+          await prisma.webhookEvent.update({
+            where: { id: event.id },
+            data: { status: 'FAILED', lastAttempt: new Date() },
+          });
+          await this.logWebhookAction(
+            event.webhookId,
+            'FAILED',
+            'Webhook was deleted or deactivated before its scheduled retry could run'
+          );
+          continue;
+        }
+
+        const payload: WebhookPayload = JSON.parse(JSON.stringify(event.payload));
+        const signature = WebhookService.generateSignature(JSON.stringify(payload), webhook.secret);
+
+        await this.attemptWebhookDelivery(webhook, event, payload, signature, event.attempts);
+      }
+    } catch (error) {
+      logger.error(`Failed to process pending webhook retries: ${error}`);
+    } finally {
+      this.isProcessingRetries = false;
     }
   }
 

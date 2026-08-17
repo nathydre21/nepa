@@ -1,6 +1,7 @@
 import { logger } from './logger';
 import prisma from '../src/config/prismaClient';
 import { EventEmitter } from 'events';
+import { webhookService } from './WebhookService';
 
 export interface QueuedWebhookEvent {
   id: string;
@@ -25,8 +26,19 @@ export interface QueueMetrics {
   throughputPerMinute: number;
 }
 
+/**
+ * Runs the interval that drives WebhookEvent retry delivery
+ * (WebhookService.processPendingRetries) — this is now the sole retry
+ * worker, replacing the old in-process setTimeout scheduling.
+ *
+ * The WebhookQueue table and addToQueue/getQueueMetrics/getQueuedEvents/
+ * retryEvent/cancelEvent below are a separate, still-functional CRUD
+ * surface over that table, but nothing currently calls addToQueue, and
+ * the processor no longer drains WebhookQueue — WebhookEvent/
+ * WebhookAttempt remain the single source of truth so the admin
+ * dashboard and event-history APIs keep working.
+ */
 class WebhookQueueService extends EventEmitter {
-  private processingQueue: Map<string, boolean> = new Map();
   private queueProcessorInterval?: NodeJS.Timeout;
   private isShuttingDown = false;
 
@@ -100,210 +112,18 @@ class WebhookQueueService extends EventEmitter {
   }
 
   /**
-   * Start the queue processor
+   * Start the queue processor. Drives WebhookEvent retry delivery via
+   * WebhookService.processPendingRetries — see the class doc comment
+   * above for why this no longer drains the WebhookQueue table.
    */
   private startQueueProcessor(): void {
     this.queueProcessorInterval = setInterval(async () => {
       if (!this.isShuttingDown) {
-        await this.processQueue();
+        await webhookService.processPendingRetries();
       }
     }, 5000); // Process every 5 seconds
 
     logger.info('Webhook queue processor started');
-  }
-
-  /**
-   * Process queued webhook events
-   */
-  private async processQueue(): Promise<void> {
-    try {
-      // Get events ordered by priority and creation time
-      const events = await prisma.webhookQueue.findMany({
-        where: {
-          status: 'QUEUED',
-          scheduledFor: {
-            lte: new Date(),
-          },
-        },
-        orderBy: [
-          { priority: 'desc' }, // CRITICAL, HIGH, NORMAL, LOW
-          { createdAt: 'asc' },
-        ],
-        take: 10, // Process in batches
-      });
-
-      for (const event of events) {
-        if (this.processingQueue.has(event.id)) {
-          continue; // Skip if already processing
-        }
-
-        this.processingQueue.set(event.id, true);
-        
-        // Process in background to not block the queue
-        this.processWebhookEvent(event).finally(() => {
-          this.processingQueue.delete(event.id);
-        });
-      }
-    } catch (error) {
-      logger.error(`Error processing webhook queue: ${error}`);
-    }
-  }
-
-  /**
-   * Process individual webhook event
-   */
-  private async processWebhookEvent(event: any): Promise<void> {
-    try {
-      await prisma.webhookQueue.update({
-        where: { id: event.id },
-        data: { status: 'PROCESSING', startedAt: new Date() },
-      });
-
-      const webhook = await prisma.webhook.findUnique({
-        where: { id: event.webhookId },
-      });
-
-      if (!webhook) {
-        await this.markEventFailed(event.id, 'Webhook not found');
-        return;
-      }
-
-      // Generate signature
-      const payloadString = JSON.stringify(event.payload);
-      const signature = this.generateSignature(payloadString, webhook.secret);
-
-      // Prepare headers
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        'X-Webhook-Signature': signature,
-        'X-Webhook-ID': webhook.id,
-        'X-Event-Type': event.eventType,
-        'X-Queue-ID': event.id,
-        'X-Priority': event.priority,
-        ...(event.headers ? JSON.parse(event.headers as any) : {}),
-      };
-
-      const startTime = Date.now();
-
-      try {
-        const response = await fetch(webhook.url, {
-          method: 'POST',
-          headers,
-          body: payloadString,
-          signal: AbortSignal.timeout(event.timeoutSeconds * 1000),
-        });
-
-        const duration = Date.now() - startTime;
-
-        if (response.ok) {
-          await this.markEventDelivered(event.id, response.status, duration);
-          logger.info(`Webhook delivered successfully: ${event.id}`);
-        } else {
-          const errorText = await response.text();
-          await this.handleEventRetry(event.id, response.status, errorText, duration);
-          logger.warn(`Webhook delivery failed: ${event.id}, status: ${response.status}`);
-        }
-      } catch (error: any) {
-        const duration = Date.now() - startTime;
-        await this.handleEventRetry(event.id, null, error.message, duration);
-        logger.error(`Webhook delivery error: ${event.id}, error: ${error.message}`);
-      }
-    } catch (error) {
-      logger.error(`Error processing webhook event ${event.id}: ${error}`);
-      await this.markEventFailed(event.id, `Processing error: ${error}`);
-    }
-  }
-
-  /**
-   * Generate HMAC signature
-   */
-  private generateSignature(payload: string, secret: string): string {
-    const crypto = require('crypto');
-    return crypto
-      .createHmac('sha256', secret)
-      .update(payload)
-      .digest('hex');
-  }
-
-  /**
-   * Mark event as delivered
-   */
-  private async markEventDelivered(eventId: string, statusCode: number, duration: number): Promise<void> {
-    await prisma.webhookQueue.update({
-      where: { id: eventId },
-      data: {
-        status: 'DELIVERED',
-        completedAt: new Date(),
-        lastStatusCode: statusCode,
-        attempts: { increment: 1 },
-        totalDuration: duration,
-      },
-    });
-
-    this.emit('eventDelivered', { eventId, statusCode, duration });
-  }
-
-  /**
-   * Handle event retry logic
-   */
-  private async handleEventRetry(
-    eventId: string,
-    statusCode: number | null,
-    error: string,
-    duration: number
-  ): Promise<void> {
-    const event = await prisma.webhookQueue.findUnique({
-      where: { id: eventId },
-    });
-
-    if (!event) return;
-
-    const newAttempts = event.attempts + 1;
-
-    if (newAttempts >= event.maxRetries) {
-      await this.markEventFailed(eventId, `Max retries exceeded. Last error: ${error}`);
-    } else {
-      const nextRetryDelay = this.calculateRetryDelay(event.retryDelay, newAttempts);
-      const nextRetryTime = new Date(Date.now() + nextRetryDelay * 1000);
-
-      await prisma.webhookQueue.update({
-        where: { id: eventId },
-        data: {
-          status: 'QUEUED',
-          attempts: newAttempts,
-          lastStatusCode: statusCode,
-          lastError: error,
-          scheduledFor: nextRetryTime,
-          totalDuration: { increment: duration },
-        },
-      });
-
-      this.emit('eventRetryScheduled', { eventId, nextRetryTime, attempts: newAttempts });
-    }
-  }
-
-  /**
-   * Mark event as failed
-   */
-  private async markEventFailed(eventId: string, error: string): Promise<void> {
-    await prisma.webhookQueue.update({
-      where: { id: eventId },
-      data: {
-        status: 'FAILED',
-        completedAt: new Date(),
-        lastError: error,
-        attempts: { increment: 1 },
-      },
-    });
-
-    this.emit('eventFailed', { eventId, error });
-  }
-
-  /**
-   * Calculate retry delay with exponential backoff
-   */
-  private calculateRetryDelay(baseDelay: number, attemptNumber: number): number {
-    return baseDelay * Math.pow(2, attemptNumber - 1);
   }
 
   /**
@@ -461,14 +281,9 @@ class WebhookQueueService extends EventEmitter {
    */
   async shutdown(): Promise<void> {
     this.isShuttingDown = true;
-    
+
     if (this.queueProcessorInterval) {
       clearInterval(this.queueProcessorInterval);
-    }
-
-    // Wait for current processing to complete
-    while (this.processingQueue.size > 0) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
     logger.info('Webhook queue service shutdown complete');

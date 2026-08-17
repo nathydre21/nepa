@@ -295,9 +295,7 @@ describe('WebhookService', () => {
       });
     });
 
-    it('should record a non-2xx response and schedule a retry when attempts remain', async () => {
-      jest.useFakeTimers();
-
+    it('should record a non-2xx response and persist a retry time when attempts remain', async () => {
       const eventType = 'payment.success';
       const mockWebhooks = [
         {
@@ -326,8 +324,9 @@ describe('WebhookService', () => {
 
       await webhookService.triggerWebhook(eventType, {});
 
-      // Attempt 0 of 3 failed — should be recorded and a retry scheduled,
-      // not yet marked FAILED.
+      // Attempt 0 of 3 failed — should be recorded and a retry time
+      // persisted (no in-process timer; processPendingRetries drains due
+      // retries on an interval instead — see the describe block below).
       expect(mockPrisma.webhookAttempt.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           eventId: 'event-1',
@@ -342,54 +341,6 @@ describe('WebhookService', () => {
       expect(mockPrisma.webhookEvent.update).not.toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ status: 'FAILED' }) })
       );
-      expect(jest.getTimerCount()).toBe(1);
-
-      // Don't let the scheduled retry fire against the mock past this test.
-      jest.clearAllTimers();
-    });
-
-    it('should mark the event FAILED once retries are exhausted', async () => {
-      jest.useFakeTimers();
-
-      const eventType = 'payment.success';
-      const mockWebhooks = [
-        {
-          id: 'webhook-1',
-          url: testWebhookUrl,
-          events: [eventType],
-          secret: 'test-secret',
-          isActive: true,
-          retryPolicy: 'FIXED',
-          maxRetries: 1,
-          retryDelaySeconds: 1,
-          timeoutSeconds: 30,
-          headers: null,
-        },
-      ];
-      const mockEvent = { id: 'event-1', webhookId: 'webhook-1', eventType, status: 'PENDING' };
-
-      mockPrisma.webhook.findMany.mockResolvedValue(mockWebhooks as any);
-      mockPrisma.webhookEvent.create.mockResolvedValue(mockEvent as any);
-      mockPrisma.webhookAttempt.create.mockResolvedValue({} as any);
-      mockPrisma.webhookEvent.update.mockResolvedValue({} as any);
-      mockPrisma.webhookLog.create.mockResolvedValue({} as any);
-      mockedAxios.post.mockRejectedValue({
-        message: 'Request failed with status code 503',
-        response: { status: 503, data: 'Unavailable' },
-      });
-
-      await webhookService.triggerWebhook(eventType, {});
-      // Attempt 0 failed, retry scheduled for 1s (FIXED policy) — advance
-      // past it so attempt 1 runs and exhausts maxRetries.
-      await jest.advanceTimersByTimeAsync(1000);
-
-      expect(mockPrisma.webhookAttempt.create).toHaveBeenCalledTimes(2);
-      const updateCalls = mockPrisma.webhookEvent.update.mock.calls;
-      const lastUpdate = updateCalls[updateCalls.length - 1][0];
-      expect(lastUpdate).toEqual({
-        where: { id: 'event-1' },
-        data: expect.objectContaining({ status: 'FAILED', attempts: 2 }),
-      });
     });
 
     it('should treat a network timeout the same as any other delivery failure', async () => {
@@ -433,6 +384,196 @@ describe('WebhookService', () => {
         where: { id: 'event-1' },
         data: expect.objectContaining({ status: 'FAILED', attempts: 1 }),
       });
+    });
+  });
+
+  describe('processPendingRetries', () => {
+    it('should resume a due event and mark it DELIVERED on success', async () => {
+      const mockWebhook = {
+        id: 'webhook-1',
+        url: testWebhookUrl,
+        secret: 'test-secret',
+        isActive: true,
+        retryPolicy: 'EXPONENTIAL',
+        maxRetries: 3,
+        retryDelaySeconds: 60,
+        timeoutSeconds: 30,
+        headers: null,
+      };
+      const dueEvent = {
+        id: 'event-1',
+        webhookId: 'webhook-1',
+        eventType: 'payment.success',
+        status: 'PENDING',
+        attempts: 1,
+        payload: { eventType: 'payment.success', data: {}, timestamp: Date.now() },
+      };
+
+      mockPrisma.webhookEvent.findMany.mockResolvedValue([dueEvent] as any);
+      mockPrisma.webhook.findUnique.mockResolvedValue(mockWebhook as any);
+      mockPrisma.webhookAttempt.create.mockResolvedValue({} as any);
+      mockPrisma.webhookEvent.update.mockResolvedValue({} as any);
+      mockPrisma.webhookLog.create.mockResolvedValue({} as any);
+      mockedAxios.post.mockResolvedValue({ status: 200, data: { ok: true } });
+
+      await webhookService.processPendingRetries();
+
+      expect(mockPrisma.webhookEvent.update).toHaveBeenCalledWith({
+        where: { id: 'event-1' },
+        data: expect.objectContaining({ status: 'DELIVERED', attempts: 2 }),
+      });
+    });
+
+    it('should mark the event FAILED once retries are exhausted', async () => {
+      const mockWebhook = {
+        id: 'webhook-1',
+        url: testWebhookUrl,
+        secret: 'test-secret',
+        isActive: true,
+        retryPolicy: 'FIXED',
+        maxRetries: 1,
+        retryDelaySeconds: 1,
+        timeoutSeconds: 30,
+        headers: null,
+      };
+      // Already used its first attempt; this is its last allowed attempt.
+      const dueEvent = {
+        id: 'event-1',
+        webhookId: 'webhook-1',
+        eventType: 'payment.success',
+        status: 'PENDING',
+        attempts: 1,
+        payload: { eventType: 'payment.success', data: {}, timestamp: Date.now() },
+      };
+
+      mockPrisma.webhookEvent.findMany.mockResolvedValue([dueEvent] as any);
+      mockPrisma.webhook.findUnique.mockResolvedValue(mockWebhook as any);
+      mockPrisma.webhookAttempt.create.mockResolvedValue({} as any);
+      mockPrisma.webhookEvent.update.mockResolvedValue({} as any);
+      mockPrisma.webhookLog.create.mockResolvedValue({} as any);
+      mockedAxios.post.mockRejectedValue({
+        message: 'Request failed with status code 503',
+        response: { status: 503, data: 'Unavailable' },
+      });
+
+      await webhookService.processPendingRetries();
+
+      expect(mockPrisma.webhookEvent.update).toHaveBeenCalledWith({
+        where: { id: 'event-1' },
+        data: expect.objectContaining({ status: 'FAILED', attempts: 2 }),
+      });
+    });
+
+    it('should mark the event FAILED if its webhook was deleted or deactivated before the retry ran', async () => {
+      const dueEvent = {
+        id: 'event-1',
+        webhookId: 'webhook-1',
+        eventType: 'payment.success',
+        status: 'PENDING',
+        attempts: 1,
+        payload: { eventType: 'payment.success', data: {}, timestamp: Date.now() },
+      };
+
+      mockPrisma.webhookEvent.findMany.mockResolvedValue([dueEvent] as any);
+      mockPrisma.webhook.findUnique.mockResolvedValue(null);
+      mockPrisma.webhookEvent.update.mockResolvedValue({} as any);
+      mockPrisma.webhookLog.create.mockResolvedValue({} as any);
+
+      await webhookService.processPendingRetries();
+
+      expect(mockedAxios.post).not.toHaveBeenCalled();
+      expect(mockPrisma.webhookEvent.update).toHaveBeenCalledWith({
+        where: { id: 'event-1' },
+        data: expect.objectContaining({ status: 'FAILED' }),
+      });
+    });
+
+    it('should not run overlapping batches concurrently', async () => {
+      mockPrisma.webhookEvent.findMany.mockResolvedValue([]);
+
+      const first = webhookService.processPendingRetries();
+      const second = webhookService.processPendingRetries();
+      await Promise.all([first, second]);
+
+      // The second call should see isProcessingRetries already set and
+      // return immediately without querying again.
+      expect(mockPrisma.webhookEvent.findMany).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('retry delay jitter and cap', () => {
+    const eventType = 'payment.success';
+
+    async function triggerAndGetRetryDelaySeconds(webhookOverrides: Record<string, any>): Promise<number> {
+      const mockWebhooks = [
+        {
+          id: 'webhook-1',
+          url: testWebhookUrl,
+          events: [eventType],
+          secret: 'test-secret',
+          isActive: true,
+          timeoutSeconds: 30,
+          headers: null,
+          ...webhookOverrides,
+        },
+      ];
+      const mockEvent = { id: 'event-1', webhookId: 'webhook-1', eventType, status: 'PENDING' };
+
+      mockPrisma.webhook.findMany.mockResolvedValue(mockWebhooks as any);
+      mockPrisma.webhookEvent.create.mockResolvedValue(mockEvent as any);
+      mockPrisma.webhookAttempt.create.mockResolvedValue({} as any);
+      mockPrisma.webhookEvent.update.mockResolvedValue({} as any);
+      mockedAxios.post.mockRejectedValue({ message: 'fail', response: { status: 500 } });
+
+      const before = Date.now();
+      await webhookService.triggerWebhook(eventType, {});
+
+      const call = mockPrisma.webhookEvent.update.mock.calls.find(
+        (c: any) => c[0].where.id === 'event-1' && c[0].data.nextRetry
+      );
+      const nextRetry: Date = call![0].data.nextRetry;
+      return (nextRetry.getTime() - before) / 1000;
+    }
+
+    it('keeps EXPONENTIAL delay within [capped/2, capped] for the given attempt', async () => {
+      // attempt 0, baseDelay 60s -> uncapped delay 60s -> jitter range [30, 60]
+      const delaySeconds = await triggerAndGetRetryDelaySeconds({
+        retryPolicy: 'EXPONENTIAL',
+        maxRetries: 3,
+        retryDelaySeconds: 60,
+      });
+      expect(delaySeconds).toBeGreaterThanOrEqual(29);
+      expect(delaySeconds).toBeLessThanOrEqual(61);
+    });
+
+    it('caps an unbounded EXPONENTIAL delay at the 1-hour ceiling', async () => {
+      // attempt 0, baseDelay 100000s -> uncapped delay 100000s, way past
+      // the 3600s cap -> jitter range [1800, 3600]
+      const delaySeconds = await triggerAndGetRetryDelaySeconds({
+        retryPolicy: 'EXPONENTIAL',
+        maxRetries: 3,
+        retryDelaySeconds: 100000,
+      });
+      expect(delaySeconds).toBeGreaterThanOrEqual(1799);
+      expect(delaySeconds).toBeLessThanOrEqual(3601);
+    });
+
+    it('keeps LINEAR and FIXED delays within their expected bounds', async () => {
+      const linearDelay = await triggerAndGetRetryDelaySeconds({
+        retryPolicy: 'LINEAR',
+        maxRetries: 3,
+        retryDelaySeconds: 10,
+      });
+      expect(linearDelay).toBeGreaterThanOrEqual(4.9);
+      expect(linearDelay).toBeLessThanOrEqual(10.1);
+
+      const fixedDelay = await triggerAndGetRetryDelaySeconds({
+        retryPolicy: 'FIXED',
+        maxRetries: 3,
+        retryDelaySeconds: 10,
+      });
+      expect(fixedDelay).toBeGreaterThanOrEqual(4.9);
+      expect(fixedDelay).toBeLessThanOrEqual(10.1);
     });
   });
 

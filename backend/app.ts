@@ -34,6 +34,7 @@ import { errorHandler, getErrorStats, getErrorLogs } from './middleware/centrali
 import ConnectionPoolManager from './databases/ConnectionPoolManager';
 import scheduledPaymentRoutes from './routes/scheduledPaymentRoutes';
 import { scheduledPaymentService } from './services/ScheduledPaymentService';
+import { webhookQueueService } from './services/WebhookQueueService';
 import { initializeCacheSystem } from './services/cache/CacheInitializer';
 import { requestTimeout } from './middleware/requestTimeout';
 
@@ -460,6 +461,11 @@ app.use('/api/scheduled-payments', scheduledPaymentRoutes);
 
 // Start the scheduled payment cron job
 scheduledPaymentService.startScheduler();
+
+// Nothing else in the app imports webhookQueueService — without this,
+// its interval (which now drives all webhook retry delivery via
+// WebhookService.processPendingRetries) would never start.
+void webhookQueueService;
 
 // Setup global error handling
 setupGlobalErrorHandling(app);
