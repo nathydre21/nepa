@@ -235,12 +235,6 @@ export const DataTable: React.FC<DataTableProps> = ({
   return (
     <div className={`bg-white rounded-lg shadow-sm border border-gray-200 ${className}`}>
       {/* Header */}
-      <div className="p-4 border-b border-gray-200">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-3 sm:space-y-0">
-          <div className="flex items-center space-x-2">
-            <h3 className="text-lg font-medium text-gray-900">
-              {data.length} {data.length === 1 ? 'item' : 'items'}
-            </h3>
       <div className="p-3 lg:p-4 border-b border-gray-200">
         <div className="flex flex-col space-y-3 lg:space-y-0">
           <div className="flex items-center justify-between">
@@ -310,6 +304,7 @@ export const DataTable: React.FC<DataTableProps> = ({
             ))}
           </div>
         )}
+        </div>
       </div>
 
       {/* Table - Desktop */}
