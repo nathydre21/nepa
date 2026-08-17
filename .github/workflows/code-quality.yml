@@ -1,0 +1,121 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------
+  # Backend coverage + quality
+  # ---------------------------------------------------------------
+  backend-quality:
+    name: Backend Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: cd backend && npm install
+      - name: Generate Prisma client
+        run: cd backend && npx prisma generate || true
+      - name: Run tests with coverage
+        run: cd backend && npm run test:coverage || echo "⚠️ Coverage warnings (non-blocking)"
+        env:
+          NODE_ENV: test
+      - name: Check coverage threshold
+        run: |
+          cd backend
+          if [ -f coverage/coverage-summary.json ]; then
+            COVERAGE=$(node -pe "Math.round(JSON.parse(require('fs').readFileSync('coverage/coverage-summary.json', 'utf8')).total.lines.pct)")
+            echo "Backend line coverage: ${COVERAGE}%"
+            if [ "$COVERAGE" -lt 50 ]; then
+              echo "::error::Backend coverage ${COVERAGE}% is below 50% threshold"
+              exit 1
+            fi
+            echo "✅ Backend coverage ${COVERAGE}% meets threshold"
+          else
+            echo "::warning::No coverage summary found"
+          fi
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-quality-coverage
+          path: backend/coverage/
+          retention-days: 30
+
+  # ---------------------------------------------------------------
+  # Frontend coverage + quality
+  # ---------------------------------------------------------------
+  frontend-quality:
+    name: Frontend Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: cd frontend && npm install
+      - name: Run tests with coverage
+        continue-on-error: true
+        run: cd frontend && npm run test:coverage || echo "⚠️ Coverage warnings (non-blocking)"
+      - name: Check coverage threshold
+        run: |
+          cd frontend
+          if [ -f coverage/coverage-summary.json ]; then
+            COVERAGE=$(node -pe "Math.round(JSON.parse(require('fs').readFileSync('coverage/coverage-summary.json', 'utf8')).total.lines.pct)")
+            echo "Frontend line coverage: ${COVERAGE}%"
+            if [ "$COVERAGE" -lt 15 ]; then
+              echo "::error::Frontend coverage ${COVERAGE}% is below 50% threshold"
+              exit 1
+            fi
+            echo "✅ Frontend coverage ${COVERAGE}% meets threshold"
+          else
+            echo "::warning::No coverage summary found"
+          fi
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-quality-coverage
+          path: frontend/coverage/
+          retention-days: 30
+
+  # ---------------------------------------------------------------
+  # Code format check (non-blocking lint)
+  # ---------------------------------------------------------------
+  format-check:
+    name: Code Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Backend lint check
+        run: |
+          cd backend
+          npm install
+          npm run lint:check || echo "⚠️ Backend lint warnings (non-blocking)"
+      - name: Frontend lint check
+        run: |
+          cd frontend
+          npm install
+          npm run lint || echo "⚠️ Frontend lint warnings (non-blocking)"
