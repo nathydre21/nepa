@@ -317,6 +317,7 @@ describe('WebhookService', () => {
       mockPrisma.webhookEvent.create.mockResolvedValue(mockEvent as any);
       mockPrisma.webhookAttempt.create.mockResolvedValue({} as any);
       mockPrisma.webhookEvent.update.mockResolvedValue({} as any);
+      mockPrisma.webhookLog.create.mockResolvedValue({} as any);
       mockedAxios.post.mockRejectedValue({
         message: 'Request failed with status code 500',
         response: { status: 500, data: 'Server Error' },
@@ -341,6 +342,12 @@ describe('WebhookService', () => {
       expect(mockPrisma.webhookEvent.update).not.toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ status: 'FAILED' }) })
       );
+      // A failed attempt with retries remaining should still produce a
+      // persisted, correctly-statused log entry — not just the terminal
+      // TRIGGERED/FAILED outcomes.
+      expect(mockPrisma.webhookLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ action: 'RETRY_SCHEDULED', status: 'FAILURE' }),
+      });
     });
 
     it('should treat a network timeout the same as any other delivery failure', async () => {
@@ -512,6 +519,12 @@ describe('WebhookService', () => {
         where: { id: 'event-1' },
         data: expect.objectContaining({ status: 'FAILED', attempts: 2 }),
       });
+      // logWebhookAction used to hardcode status: 'SUCCESS' for every log
+      // entry, including this one — a permanently failed delivery must be
+      // logged with status FAILURE, not SUCCESS.
+      expect(mockPrisma.webhookLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ action: 'FAILED', status: 'FAILURE' }),
+      });
     });
 
     it('should mark the event FAILED if its webhook was deleted or deactivated before the retry ran', async () => {
@@ -672,6 +685,9 @@ describe('WebhookService', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('Network error');
+      expect(mockPrisma.webhookLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ action: 'TESTED', status: 'FAILURE' }),
+      });
     });
 
     it('should throw error for non-existent webhook', async () => {
@@ -759,7 +775,7 @@ describe('WebhookService', () => {
       mockPrisma.webhook.findUnique.mockResolvedValue(mockWebhook as any);
       mockPrisma.webhookEvent.update.mockResolvedValue({} as any);
       mockPrisma.webhookAttempt.create.mockResolvedValue({} as any);
-      mockPrisma.webhookEvent.update.mockResolvedValue({} as any);
+      mockPrisma.webhookLog.create.mockResolvedValue({} as any);
 
       await webhookService.retryWebhookEvent(eventId);
 
@@ -769,6 +785,9 @@ describe('WebhookService', () => {
           status: 'PENDING',
           attempts: 0,
         },
+      });
+      expect(mockPrisma.webhookLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ action: 'RETRY_INITIATED', status: 'SUCCESS' }),
       });
     });
 

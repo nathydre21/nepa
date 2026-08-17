@@ -362,6 +362,12 @@ export class WebhookService {
           // survive a restart, silently dropping the retry. nextRetry is
           // persisted instead, and WebhookQueueService's interval drains
           // due events via processPendingRetries() below.
+          await this.logWebhookAction(
+            webhook.id,
+            'RETRY_SCHEDULED',
+            `Event ${payload.eventType} delivery failed on attempt ${attemptNumber + 1}, retry due in ${nextRetryDelay}s`,
+            'FAILURE'
+          );
           logger.info(`Webhook delivery failed. Retry due for event ${event.id} in ${nextRetryDelay}s`);
         } else {
           // Max retries exceeded
@@ -374,7 +380,12 @@ export class WebhookService {
             },
           });
 
-          await this.logWebhookAction(webhook.id, 'FAILED', `Event ${payload.eventType} failed after ${attemptNumber + 1} attempts`);
+          await this.logWebhookAction(
+            webhook.id,
+            'FAILED',
+            `Event ${payload.eventType} failed after ${attemptNumber + 1} attempts`,
+            'FAILURE'
+          );
           logger.error(`Webhook delivery failed permanently for event ${event.id} after ${attemptNumber + 1} attempts`);
         }
       }
@@ -456,7 +467,8 @@ export class WebhookService {
           await this.logWebhookAction(
             event.webhookId,
             'FAILED',
-            'Webhook was deleted or deactivated before its scheduled retry could run'
+            'Webhook was deleted or deactivated before its scheduled retry could run',
+            'FAILURE'
           );
           continue;
         }
@@ -541,14 +553,19 @@ export class WebhookService {
   /**
    * Log webhook action
    */
-  private async logWebhookAction(webhookId: string, action: string, details?: string): Promise<void> {
+  private async logWebhookAction(
+    webhookId: string,
+    action: string,
+    details?: string,
+    status: 'SUCCESS' | 'FAILURE' = 'SUCCESS'
+  ): Promise<void> {
     try {
       await prisma.webhookLog.create({
         data: {
           webhookId,
           action,
           details,
-          status: 'SUCCESS',
+          status,
         },
       });
     } catch (error) {
@@ -631,7 +648,7 @@ export class WebhookService {
         const responseTime = Date.now() - startTime;
         const axiosError = error as AxiosError;
 
-        await this.logWebhookAction(webhook.id, 'TESTED', `Test delivery failed: ${axiosError.message}`);
+        await this.logWebhookAction(webhook.id, 'TESTED', `Test delivery failed: ${axiosError.message}`, 'FAILURE');
 
         return {
           success: false,
@@ -713,6 +730,7 @@ export class WebhookService {
         },
       });
 
+      await this.logWebhookAction(webhook.id, 'RETRY_INITIATED', `Manual retry triggered for event ${event.eventType}`);
       await this.attemptWebhookDelivery(webhook, event, payload, 0);
       logger.info(`Webhook event retried: ${eventId}`);
     } catch (error) {
