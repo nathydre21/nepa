@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { webhookService } from '../WebhookService';
-import { webhookMonitor } from '../WebhookMonitor';
+import { webhookMonitor } from '../services/WebhookMonitor';
 import { logger } from '../logger';
 import prisma from '../prismaClient';
 import { errorResponse } from '../utils/errorResponse';
@@ -15,7 +15,7 @@ export class WebhookManagementController {
    */
   static async getDashboard(req: Request, res: Response): Promise<void> {
     try {
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
 
       const [userMetrics, userWebhooks, healthStatuses] = await Promise.all([
         webhookMonitor.getUserMetrics(userId),
@@ -50,7 +50,7 @@ export class WebhookManagementController {
   static async getWebhookDetails(req: Request, res: Response): Promise<void> {
     try {
       const { webhookId } = req.params;
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
 
       const webhook = await prisma.webhook.findUnique({
         where: { id: webhookId },
@@ -95,7 +95,7 @@ export class WebhookManagementController {
    */
   static async getPerformanceReport(req: Request, res: Response): Promise<void> {
     try {
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
       const { startDate, endDate } = req.query;
 
       const report = await webhookMonitor.generatePerformanceReport(
@@ -145,7 +145,7 @@ export class WebhookManagementController {
   static async bulkRetryFailedEvents(req: Request, res: Response): Promise<void> {
     try {
       const { webhookId, eventIds } = req.body;
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
 
       // Verify ownership
       const webhook = await prisma.webhook.findUnique({
@@ -192,7 +192,7 @@ export class WebhookManagementController {
    */
   static async exportWebhookData(req: Request, res: Response): Promise<void> {
     try {
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
       const { format = 'json' } = req.query;
 
       const [webhooks, metrics, report] = await Promise.all([
@@ -237,7 +237,7 @@ export class WebhookManagementController {
    */
   static async getAnalytics(req: Request, res: Response): Promise<void> {
     try {
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
 
       const [metrics, eventStats, userHealthStatuses] = await Promise.all([
         webhookMonitor.getUserMetrics(userId),
@@ -284,7 +284,7 @@ export class WebhookTestingController {
   static async createTestEvent(req: Request, res: Response): Promise<void> {
     try {
       const { webhookId, eventType, payload } = req.body;
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
 
       // Verify ownership
       const webhook = await prisma.webhook.findUnique({
@@ -335,7 +335,7 @@ export class WebhookTestingController {
   static async getTestHistory(req: Request, res: Response): Promise<void> {
     try {
       const { webhookId } = req.params;
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
       const { limit = '20' } = req.query;
 
       // Verify ownership
@@ -374,7 +374,7 @@ export class WebhookTestingController {
   static async testWithPayload(req: Request, res: Response): Promise<void> {
     try {
       const { webhookId, payload } = req.body;
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
 
       // Verify ownership
       const webhook = await prisma.webhook.findUnique({
@@ -406,7 +406,7 @@ export class WebhookTestingController {
   static async debugDeliveryAttempt(req: Request, res: Response): Promise<void> {
     try {
       const { eventId } = req.params;
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
 
       const event = await prisma.webhookEvent.findUnique({
         where: { id: eventId },

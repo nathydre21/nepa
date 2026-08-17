@@ -11,6 +11,7 @@ import { sanitizeInput } from './middleware/inputSanitization';
 import { captureAuditContext, auditRateLimit, auditAuth, auditAdmin, auditPayment, auditDocument } from './middleware/auditMiddleware';
 import auditRoutes from './routes/auditRoutes';
 import fraudRoutes from './routes/fraudRoutes';
+import webhookRoutes from './routes/webhookRoutes';
 import { swaggerSpec, getVersionedSwaggerSpec } from './swagger';
 import { apiVersioningConfig } from './config/api-versioning';
 import { AuthenticationController } from './controllers/AuthenticationController';
@@ -138,6 +139,11 @@ if (AUTH_ENABLED) {
 // 13. Fraud detection API (ML scoring 0-100, manual review workflow, adaptive learning)
 if (AUTH_ENABLED) {
   app.use('/api/fraud', fraudRoutes);
+}
+
+// 13b. Webhook delivery, management, and admin dashboard API
+if (AUTH_ENABLED) {
+  app.use('/api/webhooks', webhookRoutes);
 }
 
 // 14. API Documentation

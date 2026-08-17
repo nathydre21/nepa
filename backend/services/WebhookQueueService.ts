@@ -1,5 +1,5 @@
 import { logger } from './logger';
-import prisma from './prismaClient';
+import prisma from '../src/config/prismaClient';
 import { EventEmitter } from 'events';
 
 export interface QueuedWebhookEvent {

@@ -1,7 +1,7 @@
 import * as crypto from 'crypto';
 import axios, { AxiosError } from 'axios';
 import { logger } from './logger';
-import prisma from './prismaClient';
+import prisma from '../src/config/prismaClient';
 
 export interface WebhookPayload {
   eventType: string;
@@ -46,7 +46,7 @@ interface WebhookEvent {
   updatedAt: Date;
 }
 
-class WebhookService {
+export class WebhookService {
   /**
    * Generate HMAC signature for webhook payload
    */
@@ -146,7 +146,11 @@ class WebhookService {
   ): Promise<Webhook> {
     try {
       if (updates.url) {
-        new URL(updates.url);
+        try {
+          new URL(updates.url);
+        } catch {
+          throw new Error('Invalid webhook URL');
+        }
       }
 
       const webhook = await prisma.webhook.update({
@@ -557,6 +561,41 @@ class WebhookService {
       }
     } catch (error) {
       logger.error(`Failed to test webhook: ${error}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Process a received (inbound) webhook event, i.e. one sent to this
+   * server by an external caller via WebhookController.receiveWebhook,
+   * after signature verification has already passed.
+   *
+   * This only records that the event was received and processed; it does
+   * not dispatch to any eventType-specific business logic, since no such
+   * handler registry exists in this codebase yet.
+   */
+  async processWebhookEvent(eventId: string): Promise<void> {
+    try {
+      const event = await prisma.webhookEvent.findUnique({
+        where: { id: eventId },
+      });
+
+      if (!event) {
+        throw new Error('Webhook event not found');
+      }
+
+      await prisma.webhookEvent.update({
+        where: { id: eventId },
+        data: {
+          status: 'DELIVERED',
+          lastAttempt: new Date(),
+        },
+      });
+
+      await this.logWebhookAction(event.webhookId, 'RECEIVED', `Event ${event.eventType} processed successfully`);
+      logger.info(`Webhook event processed: ${eventId}`);
+    } catch (error) {
+      logger.error(`Failed to process webhook event: ${error}`);
       throw error;
     }
   }
