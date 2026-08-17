@@ -1,20 +1,17 @@
-#![no_std]
-use soroban_sdk::{
-    contract, contractimpl, Address, Env, String, symbol_short, Symbol, Vec, Map, 
-    storage::Persistent, storage::Instance
-};
+use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, String, Symbol, Vec};
 
 // Storage keys for multi-utility system
 const UTILITY_TYPES: Symbol = symbol_short!("UT_TYPES");
-const UTILITY_PROVIDERS: Symbol = symbol_short!("UT_PROVS");
+pub(crate) const UTILITY_PROVIDERS: Symbol = symbol_short!("UT_PROVS");
 const UTILITY_CONFIGS: Symbol = symbol_short!("UT_CONF");
 const UTILITY_FEES: Symbol = symbol_short!("UT_FEES");
 const UTILITY_METERS: Symbol = symbol_short!("UT_METERS");
 const UTILITY_VERSIONS: Symbol = symbol_short!("UT_VERS");
 
 // Utility Type Enumeration
-#[derive(Clone, Debug, Eq, PartialEq)]
-#[repr(u8)]
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
 pub enum UtilityType {
     Electricity = 1,
     Water = 2,
@@ -27,7 +24,7 @@ pub enum UtilityType {
 }
 
 impl UtilityType {
-    pub fn from_u8(value: u8) -> Result<Self, String> {
+    pub fn from_u8(value: u32) -> Result<Self, ()> {
         match value {
             1 => Ok(UtilityType::Electricity),
             2 => Ok(UtilityType::Water),
@@ -37,42 +34,43 @@ impl UtilityType {
             6 => Ok(UtilityType::PropertyTax),
             7 => Ok(UtilityType::Solar),
             8 => Ok(UtilityType::EVCharging),
-            _ => Err("Invalid utility type".to_string()),
+            _ => Err(()),
         }
     }
 
-    pub fn to_u8(&self) -> u8 {
-        *self as u8
+    pub fn to_u8(self) -> u32 {
+        self as u32
     }
 
-    pub fn to_string(&self) -> String {
+    pub fn to_string(self) -> &'static str {
         match self {
-            UtilityType::Electricity => String::from_str(&"electricity"),
-            UtilityType::Water => String::from_str(&"water"),
-            UtilityType::Gas => String::from_str(&"gas"),
-            UtilityType::Internet => String::from_str(&"internet"),
-            UtilityType::Waste => String::from_str(&"waste"),
-            UtilityType::PropertyTax => String::from_str(&"property_tax"),
-            UtilityType::Solar => String::from_str(&"solar"),
-            UtilityType::EVCharging => String::from_str(&"ev_charging"),
+            UtilityType::Electricity => "electricity",
+            UtilityType::Water => "water",
+            UtilityType::Gas => "gas",
+            UtilityType::Internet => "internet",
+            UtilityType::Waste => "waste",
+            UtilityType::PropertyTax => "property_tax",
+            UtilityType::Solar => "solar",
+            UtilityType::EVCharging => "ev_charging",
         }
     }
 
-    pub fn get_unit(&self) -> String {
+    pub fn get_unit(&self) -> &'static str {
         match self {
-            UtilityType::Electricity => String::from_str(&"kWh"),
-            UtilityType::Water => String::from_str(&"m³"),
-            UtilityType::Gas => String::from_str(&"m³"),
-            UtilityType::Internet => String::from_str(&"Mbps"),
-            UtilityType::Waste => String::from_str(&"kg"),
-            UtilityType::PropertyTax => String::from_str(&"property"),
-            UtilityType::Solar => String::from_str(&"kWh"),
-            UtilityType::EVCharging => String::from_str(&"kWh"),
+            UtilityType::Electricity => "kWh",
+            UtilityType::Water => "m³",
+            UtilityType::Gas => "m³",
+            UtilityType::Internet => "Mbps",
+            UtilityType::Waste => "kg",
+            UtilityType::PropertyTax => "property",
+            UtilityType::Solar => "kWh",
+            UtilityType::EVCharging => "kWh",
         }
     }
 }
 
 // Utility Provider Structure
+#[contracttype]
 #[derive(Clone)]
 pub struct UtilityProvider {
     pub provider_id: String,
@@ -84,11 +82,12 @@ pub struct UtilityProvider {
     pub registration_date: u64,
     pub license_number: String,
     pub contact_info: String,
-    pub rating: u8, // 1-5 rating
+    pub rating: u32, // 1-5 rating
     pub total_transactions: u64,
 }
 
 // Utility Configuration Structure
+#[contracttype]
 #[derive(Clone)]
 pub struct UtilityConfig {
     pub utility_type: UtilityType,
@@ -97,7 +96,7 @@ pub struct UtilityConfig {
     pub base_rate: i128, // Base rate per unit
     pub currency: String,
     pub decimals: u32,
-    pub tier_rates: Vec<TierRate>, // Tiered pricing
+    pub tier_rates: Vec<TierRate>,             // Tiered pricing
     pub time_of_use_rates: Vec<TimeOfUseRate>, // Time-based pricing
     pub seasonal_adjustments: Vec<SeasonalAdjustment>,
     pub tax_rates: Vec<TaxRate>,
@@ -114,6 +113,7 @@ pub struct UtilityConfig {
 }
 
 // Tier Rate Structure
+#[contracttype]
 #[derive(Clone)]
 pub struct TierRate {
     pub min_units: i128,
@@ -123,25 +123,28 @@ pub struct TierRate {
 }
 
 // Time of Use Rate Structure
+#[contracttype]
 #[derive(Clone)]
 pub struct TimeOfUseRate {
-    pub start_hour: u8,
-    pub end_hour: u8,
-    pub days_of_week: Vec<u8>, // 0-6 (Sunday-Saturday)
-    pub rate_multiplier: i128, // Multiplier for base rate (e.g., 150 = 1.5x)
-    pub season: String, // "summer", "winter", etc.
+    pub start_hour: u32,
+    pub end_hour: u32,
+    pub days_of_week: Vec<u32>, // 0-6 (Sunday-Saturday)
+    pub rate_multiplier: i128,  // Multiplier for base rate (e.g., 150 = 1.5x)
+    pub season: String,         // "summer", "winter", etc.
 }
 
 // Seasonal Adjustment Structure
+#[contracttype]
 #[derive(Clone)]
 pub struct SeasonalAdjustment {
     pub season: String,
-    pub start_month: u8,
-    pub end_month: u8,
+    pub start_month: u32,
+    pub end_month: u32,
     pub rate_adjustment: i128, // Percentage adjustment (e.g., 110 = +10%)
 }
 
 // Tax Rate Structure
+#[contracttype]
 #[derive(Clone)]
 pub struct TaxRate {
     pub tax_name: String,
@@ -151,6 +154,7 @@ pub struct TaxRate {
 }
 
 // Discount Rate Structure
+#[contracttype]
 #[derive(Clone)]
 pub struct DiscountRate {
     pub discount_name: String,
@@ -161,6 +165,7 @@ pub struct DiscountRate {
 }
 
 // Late Fee Configuration
+#[contracttype]
 #[derive(Clone)]
 pub struct LateFeeConfig {
     pub flat_fee: i128,
@@ -171,6 +176,7 @@ pub struct LateFeeConfig {
 }
 
 // Utility Fee Structure
+#[contracttype]
 #[derive(Clone)]
 pub struct UtilityFee {
     pub fee_id: String,
@@ -185,8 +191,9 @@ pub struct UtilityFee {
     pub created_at: u64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-#[repr(u8)]
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
 pub enum FeeType {
     Processing = 1,
     Service = 2,
@@ -199,7 +206,7 @@ pub enum FeeType {
 }
 
 impl FeeType {
-    pub fn from_u8(value: u8) -> Result<Self, String> {
+    pub fn from_u8(value: u32) -> Result<Self, ()> {
         match value {
             1 => Ok(FeeType::Processing),
             2 => Ok(FeeType::Service),
@@ -209,16 +216,17 @@ impl FeeType {
             6 => Ok(FeeType::Reconnection),
             7 => Ok(FeeType::Inspection),
             8 => Ok(FeeType::Emergency),
-            _ => Err("Invalid fee type".to_string()),
+            _ => Err(()),
         }
     }
 
-    pub fn to_u8(&self) -> u8 {
-        *self as u8
+    pub fn to_u8(self) -> u32 {
+        self as u32
     }
 }
 
 // Utility Meter Structure
+#[contracttype]
 #[derive(Clone)]
 pub struct UtilityMeter {
     pub meter_id: String,
@@ -236,6 +244,7 @@ pub struct UtilityMeter {
 }
 
 // Utility Version Structure for upgrades
+#[contracttype]
 #[derive(Clone)]
 pub struct UtilityVersion {
     pub utility_type: UtilityType,
@@ -247,34 +256,71 @@ pub struct UtilityVersion {
     pub description: String,
 }
 
-#[contract]
 pub struct MultiUtilityManager;
 
-#[contractimpl]
+#[allow(clippy::too_many_arguments)]
 impl MultiUtilityManager {
     // Initialize multi-utility system
     pub fn initialize(env: Env, admin: Address) {
         admin.require_auth();
-        
+
         // Initialize utility types registry
-        let mut utility_types: Map<u8, String> = Map::new(&env);
-        utility_types.set(UtilityType::Electricity.to_u8(), UtilityType::Electricity.to_string());
-        utility_types.set(UtilityType::Water.to_u8(), UtilityType::Water.to_string());
-        utility_types.set(UtilityType::Gas.to_u8(), UtilityType::Gas.to_string());
-        utility_types.set(UtilityType::Internet.to_u8(), UtilityType::Internet.to_string());
-        utility_types.set(UtilityType::Waste.to_u8(), UtilityType::Waste.to_string());
-        utility_types.set(UtilityType::PropertyTax.to_u8(), UtilityType::PropertyTax.to_string());
-        utility_types.set(UtilityType::Solar.to_u8(), UtilityType::Solar.to_string());
-        utility_types.set(UtilityType::EVCharging.to_u8(), UtilityType::EVCharging.to_string());
-        
-        env.storage().persistent().set(&UTILITY_TYPES, &utility_types);
-        
+        let mut utility_types: Map<u32, String> = Map::new(&env);
+        utility_types.set(
+            UtilityType::Electricity.to_u8(),
+            String::from_str(&env, UtilityType::Electricity.to_string()),
+        );
+        utility_types.set(
+            UtilityType::Water.to_u8(),
+            String::from_str(&env, UtilityType::Water.to_string()),
+        );
+        utility_types.set(
+            UtilityType::Gas.to_u8(),
+            String::from_str(&env, UtilityType::Gas.to_string()),
+        );
+        utility_types.set(
+            UtilityType::Internet.to_u8(),
+            String::from_str(&env, UtilityType::Internet.to_string()),
+        );
+        utility_types.set(
+            UtilityType::Waste.to_u8(),
+            String::from_str(&env, UtilityType::Waste.to_string()),
+        );
+        utility_types.set(
+            UtilityType::PropertyTax.to_u8(),
+            String::from_str(&env, UtilityType::PropertyTax.to_string()),
+        );
+        utility_types.set(
+            UtilityType::Solar.to_u8(),
+            String::from_str(&env, UtilityType::Solar.to_string()),
+        );
+        utility_types.set(
+            UtilityType::EVCharging.to_u8(),
+            String::from_str(&env, UtilityType::EVCharging.to_string()),
+        );
+
+        env.storage()
+            .persistent()
+            .set(&UTILITY_TYPES, &utility_types);
+
         // Initialize empty collections
-        env.storage().persistent().set(&UTILITY_PROVIDERS, &Map::<String, UtilityProvider>::new(&env));
-        env.storage().persistent().set(&UTILITY_CONFIGS, &Map::<String, UtilityConfig>::new(&env));
-        env.storage().persistent().set(&UTILITY_FEES, &Map::<String, UtilityFee>::new(&env));
-        env.storage().persistent().set(&UTILITY_METERS, &Map::<String, UtilityMeter>::new(&env));
-        env.storage().persistent().set(&UTILITY_VERSIONS, &Map<String, UtilityVersion>::new(&env));
+        env.storage().persistent().set(
+            &UTILITY_PROVIDERS,
+            &Map::<String, UtilityProvider>::new(&env),
+        );
+        env.storage()
+            .persistent()
+            .set(&UTILITY_CONFIGS, &Map::<String, UtilityConfig>::new(&env));
+        env.storage()
+            .persistent()
+            .set(&UTILITY_FEES, &Map::<String, UtilityFee>::new(&env));
+        env.storage()
+            .persistent()
+            .set(&UTILITY_METERS, &Map::<String, UtilityMeter>::new(&env));
+        env.storage().persistent().set(
+            &UTILITY_VERSIONS,
+            &Map::<(String, u32), UtilityVersion>::new(&env),
+        );
     }
 
     // Register a new utility provider
@@ -284,26 +330,28 @@ impl MultiUtilityManager {
         provider_id: String,
         name: String,
         provider_address: Address,
-        utility_type: u8,
+        utility_type: u32,
         region: String,
         license_number: String,
         contact_info: String,
     ) -> Result<(), String> {
         admin.require_auth();
-        
+
         // Validate utility type
-        let utility_type_enum = UtilityType::from_u8(utility_type)?;
-        
+        let utility_type_enum = UtilityType::from_u8(utility_type)
+            .map_err(|_| String::from_str(&env, "Invalid utility type"))?;
+
         // Check if provider already exists
-        let providers: Map<String, UtilityProvider> = env.storage()
+        let providers: Map<String, UtilityProvider> = env
+            .storage()
             .persistent()
             .get(&UTILITY_PROVIDERS)
             .unwrap_or_else(|| Map::new(&env));
-        
+
         if providers.contains_key(provider_id.clone()) {
-            return Err("Provider already registered".to_string());
+            return Err(String::from_str(&env, "Provider already registered"));
         }
-        
+
         // Create new provider
         let provider = UtilityProvider {
             provider_id: provider_id.clone(),
@@ -318,12 +366,14 @@ impl MultiUtilityManager {
             rating: 5, // Start with neutral rating
             total_transactions: 0,
         };
-        
+
         // Store provider
         let mut updated_providers = providers;
         updated_providers.set(provider_id, provider);
-        env.storage().persistent().set(&UTILITY_PROVIDERS, &updated_providers);
-        
+        env.storage()
+            .persistent()
+            .set(&UTILITY_PROVIDERS, &updated_providers);
+
         Ok(())
     }
 
@@ -332,78 +382,44 @@ impl MultiUtilityManager {
         env: Env,
         admin: Address,
         config_id: String,
-        utility_type: u8,
-        provider_id: String,
-        region: String,
-        base_rate: i128,
-        currency: String,
-        decimals: u32,
-        billing_cycle_days: u32,
-        grace_period_days: u32,
-        minimum_payment: i128,
-        maximum_payment: i128,
+        config: UtilityConfig,
     ) -> Result<(), String> {
         admin.require_auth();
-        
+
         // Validate utility type
-        let utility_type_enum = UtilityType::from_u8(utility_type)?;
-        
+        let utility_type_enum = UtilityType::from_u8(config.utility_type.to_u8())
+            .map_err(|_| String::from_str(&env, "Invalid utility type"))?;
+        let provider_id = config.provider_id.clone();
+
         // Verify provider exists and is active
-        let providers: Map<String, UtilityProvider> = env.storage()
+        let providers: Map<String, UtilityProvider> = env
+            .storage()
             .persistent()
             .get(&UTILITY_PROVIDERS)
-            .ok_or("No providers registered")?;
-        
-        let provider = providers.get(provider_id.clone())
-            .ok_or("Provider not found")?;
-        
+            .ok_or(String::from_str(&env, "No providers registered"))?;
+
+        let provider = providers
+            .get(provider_id.clone())
+            .ok_or(String::from_str(&env, "Provider not found"))?;
+
         if !provider.is_active {
-            return Err("Provider is not active".to_string());
+            return Err(String::from_str(&env, "Provider is not active"));
         }
-        
+
         if provider.utility_type != utility_type_enum {
-            return Err("Utility type mismatch".to_string());
+            return Err(String::from_str(&env, "Utility type mismatch"));
         }
-        
-        // Create configuration
-        let config = UtilityConfig {
-            utility_type: utility_type_enum,
-            provider_id: provider_id.clone(),
-            region,
-            base_rate,
-            currency,
-            decimals,
-            tier_rates: Vec::new(&env),
-            time_of_use_rates: Vec::new(&env),
-            seasonal_adjustments: Vec::new(&env),
-            tax_rates: Vec::new(&env),
-            discount_rates: Vec::new(&env),
-            late_fee_config: LateFeeConfig {
-                flat_fee: 1000000, // 0.001 XLM default
-                percentage_fee: 500, // 5% default
-                max_fee: 10000000, // 0.01 XLM max
-                grace_period_days,
-                compound_daily: false,
-            },
-            payment_methods: Vec::new(&env),
-            billing_cycle_days,
-            grace_period_days,
-            minimum_payment,
-            maximum_payment,
-            is_active: true,
-            version: 1,
-            last_updated: env.ledger().timestamp(),
-        };
-        
+
         // Store configuration
-        let mut configs: Map<String, UtilityConfig> = env.storage()
+        let mut configs: Map<String, UtilityConfig> = env
+            .storage()
             .persistent()
             .get(&UTILITY_CONFIGS)
             .unwrap_or_else(|| Map::new(&env));
-        
+
         configs.set(config_id, config);
         env.storage().persistent().set(&UTILITY_CONFIGS, &configs);
-        
+
         Ok(())
     }
 
@@ -412,7 +428,7 @@ impl MultiUtilityManager {
         env: Env,
         provider_address: Address,
         meter_id: String,
-        utility_type: u8,
+        utility_type: u32,
         provider_id: String,
         customer_address: Address,
         location: String,
@@ -421,37 +437,41 @@ impl MultiUtilityManager {
         is_smart_meter: bool,
     ) -> Result<(), String> {
         provider_address.require_auth();
-        
+
         // Validate utility type
-        let utility_type_enum = UtilityType::from_u8(utility_type)?;
-        
+        let utility_type_enum = UtilityType::from_u8(utility_type)
+            .map_err(|_| String::from_str(&env, "Invalid utility type"))?;
+
         // Verify provider exists and is active
-        let providers: Map<String, UtilityProvider> = env.storage()
+        let providers: Map<String, UtilityProvider> = env
+            .storage()
             .persistent()
             .get(&UTILITY_PROVIDERS)
-            .ok_or("No providers registered")?;
-        
-        let provider = providers.get(provider_id.clone())
-            .ok_or("Provider not found")?;
-        
+            .ok_or(String::from_str(&env, "No providers registered"))?;
+
+        let provider = providers
+            .get(provider_id.clone())
+            .ok_or(String::from_str(&env, "Provider not found"))?;
+
         if provider.address != provider_address {
-            return Err("Unauthorized provider".to_string());
+            return Err(String::from_str(&env, "Unauthorized provider"));
         }
-        
+
         if !provider.is_active {
-            return Err("Provider is not active".to_string());
+            return Err(String::from_str(&env, "Provider is not active"));
         }
-        
+
         // Check if meter already exists
-        let meters: Map<String, UtilityMeter> = env.storage()
+        let meters: Map<String, UtilityMeter> = env
+            .storage()
             .persistent()
             .get(&UTILITY_METERS)
             .unwrap_or_else(|| Map::new(&env));
-        
+
         if meters.contains_key(meter_id.clone()) {
-            return Err("Meter already registered".to_string());
+            return Err(String::from_str(&env, "Meter already registered"));
         }
-        
+
         // Create meter
         let meter = UtilityMeter {
             meter_id: meter_id.clone(),
@@ -467,12 +487,14 @@ impl MultiUtilityManager {
             meter_model,
             firmware_version,
         };
-        
+
         // Store meter
         let mut updated_meters = meters;
         updated_meters.set(meter_id, meter);
-        env.storage().persistent().set(&UTILITY_METERS, &updated_meters);
-        
+        env.storage()
+            .persistent()
+            .set(&UTILITY_METERS, &updated_meters);
+
         Ok(())
     }
 
@@ -481,29 +503,33 @@ impl MultiUtilityManager {
         env: Env,
         admin: Address,
         fee_id: String,
-        utility_type: u8,
+        utility_type: u32,
         provider_id: String,
-        fee_type: u8,
+        fee_type: u32,
         fee_amount: i128,
         fee_percentage: Option<i128>,
         is_percentage: bool,
         description: String,
     ) -> Result<(), String> {
         admin.require_auth();
-        
+
         // Validate utility type and fee type
-        let utility_type_enum = UtilityType::from_u8(utility_type)?;
-        let fee_type_enum = FeeType::from_u8(fee_type)?;
-        
+        let utility_type_enum = UtilityType::from_u8(utility_type)
+            .map_err(|_| String::from_str(&env, "Invalid utility type"))?;
+        let fee_type_enum =
+            FeeType::from_u8(fee_type).map_err(|_| String::from_str(&env, "Invalid fee type"))?;
+
         // Verify provider exists
-        let providers: Map<String, UtilityProvider> = env.storage()
+        let providers: Map<String, UtilityProvider> = env
+            .storage()
             .persistent()
             .get(&UTILITY_PROVIDERS)
-            .ok_or("No providers registered")?;
-        
-        providers.get(provider_id.clone())
-            .ok_or("Provider not found")?;
-        
+            .ok_or(String::from_str(&env, "No providers registered"))?;
+
+        providers
+            .get(provider_id.clone())
+            .ok_or(String::from_str(&env, "Provider not found"))?;
+
         // Create fee
         let fee = UtilityFee {
             fee_id: fee_id.clone(),
@@ -517,78 +543,76 @@ impl MultiUtilityManager {
             is_active: true,
             created_at: env.ledger().timestamp(),
         };
-        
+
         // Store fee
-        let mut fees: Map<String, UtilityFee> = env.storage()
+        let mut fees: Map<String, UtilityFee> = env
+            .storage()
             .persistent()
             .get(&UTILITY_FEES)
             .unwrap_or_else(|| Map::new(&env));
-        
+
         fees.set(fee_id, fee);
         env.storage().persistent().set(&UTILITY_FEES, &fees);
-        
+
         Ok(())
     }
 
     // Get utility provider
     pub fn get_provider(env: Env, provider_id: String) -> Option<UtilityProvider> {
-        let providers: Map<String, UtilityProvider> = env.storage()
-            .persistent()
-            .get(&UTILITY_PROVIDERS)?;
-        
+        let providers: Map<String, UtilityProvider> =
+            env.storage().persistent().get(&UTILITY_PROVIDERS)?;
+
         providers.get(provider_id)
     }
 
     // Get utility configuration
     pub fn get_utility_config(env: Env, config_id: String) -> Option<UtilityConfig> {
-        let configs: Map<String, UtilityConfig> = env.storage()
-            .persistent()
-            .get(&UTILITY_CONFIGS)?;
-        
+        let configs: Map<String, UtilityConfig> =
+            env.storage().persistent().get(&UTILITY_CONFIGS)?;
+
         configs.get(config_id)
     }
 
     // Get utility meter
     pub fn get_meter(env: Env, meter_id: String) -> Option<UtilityMeter> {
-        let meters: Map<String, UtilityMeter> = env.storage()
-            .persistent()
-            .get(&UTILITY_METERS)?;
-        
+        let meters: Map<String, UtilityMeter> = env.storage().persistent().get(&UTILITY_METERS)?;
+
         meters.get(meter_id)
     }
 
     // Get utility fee
     pub fn get_utility_fee(env: Env, fee_id: String) -> Option<UtilityFee> {
-        let fees: Map<String, UtilityFee> = env.storage()
-            .persistent()
-            .get(&UTILITY_FEES)?;
-        
+        let fees: Map<String, UtilityFee> = env.storage().persistent().get(&UTILITY_FEES)?;
+
         fees.get(fee_id)
     }
 
     // List providers by utility type and region
     pub fn list_providers_by_type_and_region(
         env: Env,
-        utility_type: u8,
+        utility_type: u32,
         region: String,
     ) -> Result<Vec<UtilityProvider>, String> {
-        let utility_type_enum = UtilityType::from_u8(utility_type)?;
-        
-        let providers: Map<String, UtilityProvider> = env.storage()
+        let utility_type_enum = UtilityType::from_u8(utility_type)
+            .map_err(|_| String::from_str(&env, "Invalid utility type"))?;
+
+        let providers: Map<String, UtilityProvider> = env
+            .storage()
             .persistent()
             .get(&UTILITY_PROVIDERS)
-            .ok_or("No providers registered")?;
-        
+            .ok_or(String::from_str(&env, "No providers registered"))?;
+
         let mut result = Vec::new(&env);
-        
+
         for (_, provider) in providers.iter() {
-            if provider.utility_type == utility_type_enum && 
-               provider.region == region && 
-               provider.is_active {
+            if provider.utility_type == utility_type_enum
+                && provider.region == region
+                && provider.is_active
+            {
                 result.push_back(provider);
             }
         }
-        
+
         Ok(result)
     }
 
@@ -600,19 +624,23 @@ impl MultiUtilityManager {
         is_active: bool,
     ) -> Result<(), String> {
         admin.require_auth();
-        
-        let mut providers: Map<String, UtilityProvider> = env.storage()
+
+        let mut providers: Map<String, UtilityProvider> = env
+            .storage()
             .persistent()
             .get(&UTILITY_PROVIDERS)
-            .ok_or("No providers registered")?;
-        
-        let mut provider = providers.get(provider_id.clone())
-            .ok_or("Provider not found")?;
-        
+            .ok_or_else(|| String::from_str(&env, "No providers registered"))?;
+
+        let mut provider = providers
+            .get(provider_id.clone())
+            .ok_or_else(|| String::from_str(&env, "Provider not found"))?;
+
         provider.is_active = is_active;
         providers.set(provider_id, provider);
-        env.storage().persistent().set(&UTILITY_PROVIDERS, &providers);
-        
+        env.storage()
+            .persistent()
+            .set(&UTILITY_PROVIDERS, &providers);
+
         Ok(())
     }
 
@@ -624,63 +652,67 @@ impl MultiUtilityManager {
         new_config: UtilityConfig,
     ) -> Result<(), String> {
         admin.require_auth();
-        
-        let mut configs: Map<String, UtilityConfig> = env.storage()
+
+        let mut configs: Map<String, UtilityConfig> = env
+            .storage()
             .persistent()
             .get(&UTILITY_CONFIGS)
-            .ok_or("No configurations found")?;
-        
-        let old_config = configs.get(config_id.clone())
-            .ok_or("Configuration not found")?;
-        
+            .ok_or(String::from_str(&env, "No configurations found"))?;
+
+        let old_config = configs
+            .get(config_id.clone())
+            .ok_or(String::from_str(&env, "Configuration not found"))?;
+
         // Create version record
         let version = UtilityVersion {
             utility_type: old_config.utility_type,
             version: old_config.version + 1,
-            config_hash: String::from_str(&"hash_placeholder"), // In real implementation, compute hash
+            config_hash: String::from_str(&env, "hash_placeholder"), // In real implementation, compute hash
             deployment_date: env.ledger().timestamp(),
             is_active: true,
             migration_required: true,
-            description: String::from_str(&"Configuration upgrade"),
+            description: String::from_str(&env, "Configuration upgrade"),
         };
-        
+
         // Store version
-        let mut versions: Map<String, UtilityVersion> = env.storage()
+        let mut versions: Map<(String, u32), UtilityVersion> = env
+            .storage()
             .persistent()
             .get(&UTILITY_VERSIONS)
             .unwrap_or_else(|| Map::new(&env));
-        
-        let version_key = format!("{}_{}", config_id, version.version);
+
+        let version_key = (config_id.clone(), version.version);
         versions.set(version_key, version);
         env.storage().persistent().set(&UTILITY_VERSIONS, &versions);
-        
+
         // Update configuration
         let mut updated_config = new_config;
         updated_config.version = old_config.version + 1;
         updated_config.last_updated = env.ledger().timestamp();
-        
+
         configs.set(config_id, updated_config);
         env.storage().persistent().set(&UTILITY_CONFIGS, &configs);
-        
+
         Ok(())
     }
 
     // Validate utility type
-    pub fn validate_utility_type(env: Env, utility_type: u8) -> Result<(), String> {
-        let utility_types: Map<u8, String> = env.storage()
+    pub fn validate_utility_type(env: Env, utility_type: u32) -> Result<(), String> {
+        let utility_types: Map<u32, String> = env
+            .storage()
             .persistent()
             .get(&UTILITY_TYPES)
-            .ok_or("Utility types not initialized")?;
-        
+            .ok_or(String::from_str(&env, "Utility types not initialized"))?;
+
         if utility_types.contains_key(utility_type) {
             Ok(())
         } else {
-            Err("Invalid utility type".to_string())
+            Err(String::from_str(&env, "Invalid utility type"))
         }
     }
 
     // Get all utility types
-    pub fn get_utility_types(env: Env) -> Map<u8, String> {
+    pub fn get_utility_types(env: Env) -> Map<u32, String> {
         env.storage()
             .persistent()
             .get(&UTILITY_TYPES)
