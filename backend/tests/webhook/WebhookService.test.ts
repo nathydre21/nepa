@@ -385,6 +385,56 @@ describe('WebhookService', () => {
         data: expect.objectContaining({ status: 'FAILED', attempts: 1 }),
       });
     });
+
+    it('should sign deliveries so WebhookSecurityService.validateSignature accepts them', async () => {
+      // registerWebhook's response documents this exact contract to API
+      // consumers (algorithm HMAC-SHA256, header x-webhook-timestamp,
+      // format "timestamp + '.' + body") — this proves the delivery code
+      // actually implements what's documented, using the same verification
+      // path a real receiver would run.
+      const secret = 'test-secret';
+      const eventType = 'payment.success';
+      const mockWebhooks = [
+        {
+          id: 'webhook-1',
+          url: testWebhookUrl,
+          events: [eventType],
+          secret,
+          isActive: true,
+          retryPolicy: 'FIXED',
+          maxRetries: 3,
+          retryDelaySeconds: 60,
+          timeoutSeconds: 30,
+          headers: null,
+        },
+      ];
+      const mockEvent = { id: 'event-1', webhookId: 'webhook-1', eventType, status: 'PENDING' };
+
+      mockPrisma.webhook.findMany.mockResolvedValue(mockWebhooks as any);
+      mockPrisma.webhookEvent.create.mockResolvedValue(mockEvent as any);
+      mockPrisma.webhookAttempt.create.mockResolvedValue({} as any);
+      mockPrisma.webhookEvent.update.mockResolvedValue({} as any);
+      mockPrisma.webhookLog.create.mockResolvedValue({} as any);
+      mockedAxios.post.mockResolvedValue({ status: 200, data: { ok: true } });
+
+      const before = Math.floor(Date.now() / 1000);
+      await webhookService.triggerWebhook(eventType, { amount: 100 });
+      const after = Math.floor(Date.now() / 1000);
+
+      const [, body, config] = mockedAxios.post.mock.calls[0];
+      const sentTimestamp = Number(config.headers['X-Webhook-Timestamp']);
+      const sentSignature = config.headers['X-Webhook-Signature'];
+
+      expect(sentTimestamp).toBeGreaterThanOrEqual(before);
+      expect(sentTimestamp).toBeLessThanOrEqual(after);
+      expect(
+        WebhookSecurityService.validateSignature(`${sentTimestamp}.${body}`, sentSignature, secret)
+      ).toBe(true);
+      // A signature computed without the timestamp binding (the old,
+      // broken behavior) must NOT validate — otherwise this test would
+      // pass even if the timestamp weren't actually part of what's signed.
+      expect(WebhookSecurityService.validateSignature(body, sentSignature, secret)).toBe(false);
+    });
   });
 
   describe('processPendingRetries', () => {
@@ -628,6 +678,32 @@ describe('WebhookService', () => {
       mockPrisma.webhook.findUnique.mockResolvedValue(null);
 
       await expect(webhookService.testWebhook('non-existent')).rejects.toThrow('Webhook not found');
+    });
+
+    it('should sign test deliveries with the same timestamp-bound contract as real deliveries', async () => {
+      const secret = 'test-secret';
+      const mockWebhook = {
+        id: webhookId,
+        url: testWebhookUrl,
+        secret,
+        timeoutSeconds: 30,
+        headers: null,
+      };
+
+      mockPrisma.webhook.findUnique.mockResolvedValue(mockWebhook as any);
+      mockPrisma.webhookLog.create.mockResolvedValue({} as any);
+      mockedAxios.post.mockResolvedValue({ status: 200, data: 'Success' });
+
+      await webhookService.testWebhook(webhookId);
+
+      const [, body, config] = mockedAxios.post.mock.calls[0];
+      const sentTimestamp = config.headers['X-Webhook-Timestamp'];
+      const sentSignature = config.headers['X-Webhook-Signature'];
+
+      expect(sentTimestamp).toEqual(expect.any(String));
+      expect(
+        WebhookSecurityService.validateSignature(`${sentTimestamp}.${body}`, sentSignature, secret)
+      ).toBe(true);
     });
   });
 

@@ -242,10 +242,6 @@ export class WebhookService {
    */
   private async deliverWebhookEvent(webhook: Webhook, payload: WebhookPayload): Promise<void> {
     try {
-      // Create event record
-      const payloadString = JSON.stringify(payload);
-      const signature = WebhookService.generateSignature(payloadString, webhook.secret);
-
       const event = await prisma.webhookEvent.create({
         data: {
           webhookId: webhook.id,
@@ -257,7 +253,7 @@ export class WebhookService {
       });
 
       // Attempt delivery
-      await this.attemptWebhookDelivery(webhook, event, payload, signature, 0);
+      await this.attemptWebhookDelivery(webhook, event, payload, 0);
     } catch (error) {
       logger.error(`Failed to deliver webhook event for webhook ${webhook.id}: ${error}`);
     }
@@ -270,14 +266,26 @@ export class WebhookService {
     webhook: Webhook,
     event: WebhookEvent,
     payload: WebhookPayload,
-    signature: string,
     attemptNumber: number
   ): Promise<void> {
     try {
       const payloadString = JSON.stringify(payload);
+
+      // Bind the timestamp into the signed string (matching the contract
+      // documented in registerWebhook's response and the convention
+      // middleware/webhookSecurity.ts already uses to verify *inbound*
+      // signatures) so a receiver can enforce a replay window. Computed
+      // fresh per attempt, not once at event-creation time — retries can
+      // now happen up to an hour later (see calculateRetryDelay's cap), so
+      // a signature computed at attempt 0 would otherwise sign a
+      // timestamp that's long since expired by the time a retry fires.
+      const timestamp = Math.floor(Date.now() / 1000);
+      const signature = WebhookService.generateSignature(`${timestamp}.${payloadString}`, webhook.secret);
+
       const headers: { [key: string]: string } = {
         'Content-Type': 'application/json',
         'X-Webhook-Signature': signature,
+        'X-Webhook-Timestamp': String(timestamp),
         'X-Webhook-ID': webhook.id,
         'X-Event-Type': payload.eventType,
         'X-Delivery-ID': event.id,
@@ -454,9 +462,8 @@ export class WebhookService {
         }
 
         const payload: WebhookPayload = JSON.parse(JSON.stringify(event.payload));
-        const signature = WebhookService.generateSignature(JSON.stringify(payload), webhook.secret);
 
-        await this.attemptWebhookDelivery(webhook, event, payload, signature, event.attempts);
+        await this.attemptWebhookDelivery(webhook, event, payload, event.attempts);
       }
     } catch (error) {
       logger.error(`Failed to process pending webhook retries: ${error}`);
@@ -590,11 +597,13 @@ export class WebhookService {
       };
 
       const payloadString = JSON.stringify(testPayload);
-      const signature = WebhookService.generateSignature(payloadString, webhook.secret);
+      const timestamp = Math.floor(Date.now() / 1000);
+      const signature = WebhookService.generateSignature(`${timestamp}.${payloadString}`, webhook.secret);
 
       const headers = {
         'Content-Type': 'application/json',
         'X-Webhook-Signature': signature,
+        'X-Webhook-Timestamp': String(timestamp),
         'X-Webhook-ID': webhook.id,
         'X-Event-Type': 'webhook.test',
         'X-Test-Delivery': 'true',
@@ -694,7 +703,6 @@ export class WebhookService {
       }
 
       const payload: WebhookPayload = JSON.parse(JSON.stringify(event.payload));
-      const signature = WebhookService.generateSignature(JSON.stringify(payload), webhook.secret);
 
       // Reset attempts for retry
       await prisma.webhookEvent.update({
@@ -705,7 +713,7 @@ export class WebhookService {
         },
       });
 
-      await this.attemptWebhookDelivery(webhook, event, payload, signature, 0);
+      await this.attemptWebhookDelivery(webhook, event, payload, 0);
       logger.info(`Webhook event retried: ${eventId}`);
     } catch (error) {
       logger.error(`Failed to retry webhook event: ${error}`);
