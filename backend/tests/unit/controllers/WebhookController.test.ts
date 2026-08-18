@@ -233,7 +233,7 @@ describe('WebhookController', () => {
     };
 
     it('should register a webhook successfully', async () => {
-      (req as any).userId = 'user-123';
+      (req as any).user = { id: 'user-123' };
       req.body = validBody;
 
       const mockWebhook = {
@@ -261,7 +261,7 @@ describe('WebhookController', () => {
     });
 
     it('should return 400 when URL is missing', async () => {
-      (req as any).userId = 'user-123';
+      (req as any).user = { id: 'user-123' };
       req.body = { events: ['payment.success'] };
 
       await WebhookController.registerWebhook(req, res);
@@ -274,7 +274,7 @@ describe('WebhookController', () => {
     });
 
     it('should return 400 when events is not an array', async () => {
-      (req as any).userId = 'user-123';
+      (req as any).user = { id: 'user-123' };
       req.body = { url: 'https://example.com/webhook', events: 'payment.success' };
 
       await WebhookController.registerWebhook(req, res);
@@ -287,7 +287,7 @@ describe('WebhookController', () => {
     });
 
     it('should handle registration errors with 500', async () => {
-      (req as any).userId = 'user-123';
+      (req as any).user = { id: 'user-123' };
       req.body = validBody;
 
       mockWebhookService.registerWebhook.mockRejectedValue(new Error('Registration failed'));
@@ -302,7 +302,7 @@ describe('WebhookController', () => {
 
   describe('getUserWebhooks', () => {
     it('should return all webhooks for the user', async () => {
-      (req as any).userId = 'user-123';
+      (req as any).user = { id: 'user-123' };
 
       const mockWebhooks = [
         { id: 'wh-1', url: 'https://example.com/hook1', events: ['payment.success'], description: 'Hook 1', isActive: true, retryPolicy: 'EXPONENTIAL', maxRetries: 3, createdAt: new Date(), updatedAt: new Date() },
@@ -324,7 +324,7 @@ describe('WebhookController', () => {
     });
 
     it('should return empty array when user has no webhooks', async () => {
-      (req as any).userId = 'user-456';
+      (req as any).user = { id: 'user-456' };
       mockWebhookService.getUserWebhooks.mockResolvedValue([]);
 
       await WebhookController.getUserWebhooks(req, res);
@@ -337,7 +337,7 @@ describe('WebhookController', () => {
     });
 
     it('should handle service errors with 500', async () => {
-      (req as any).userId = 'user-123';
+      (req as any).user = { id: 'user-123' };
       mockWebhookService.getUserWebhooks.mockRejectedValue(new Error('DB error'));
 
       await WebhookController.getUserWebhooks(req, res);
@@ -351,7 +351,7 @@ describe('WebhookController', () => {
   describe('updateWebhook', () => {
     it('should update a webhook successfully', async () => {
       const mockPrisma = getMockPrisma();
-      (req as any).userId = 'user-123';
+      (req as any).user = { id: 'user-123' };
       req.params = { webhookId: 'wh-1' };
       req.body = { url: 'https://example.com/new-hook' };
 
@@ -384,7 +384,7 @@ describe('WebhookController', () => {
 
     it('should return 403 when user does not own the webhook', async () => {
       const mockPrisma = getMockPrisma();
-      (req as any).userId = 'user-456';
+      (req as any).user = { id: 'user-456' };
       req.params = { webhookId: 'wh-1' };
       req.body = { url: 'https://example.com/new-hook' };
 
@@ -404,7 +404,7 @@ describe('WebhookController', () => {
   describe('deleteWebhook', () => {
     it('should delete a webhook successfully', async () => {
       const mockPrisma = getMockPrisma();
-      (req as any).userId = 'user-123';
+      (req as any).user = { id: 'user-123' };
       req.params = { webhookId: 'wh-1' };
 
       mockPrisma.webhook.findUnique.mockResolvedValue({
@@ -425,7 +425,7 @@ describe('WebhookController', () => {
 
     it('should return 403 when user does not own the webhook', async () => {
       const mockPrisma = getMockPrisma();
-      (req as any).userId = 'user-456';
+      (req as any).user = { id: 'user-456' };
       req.params = { webhookId: 'wh-1' };
 
       mockPrisma.webhook.findUnique.mockResolvedValue({
@@ -444,7 +444,7 @@ describe('WebhookController', () => {
   describe('getWebhookEvents', () => {
     it('should return webhook events with default limit', async () => {
       const mockPrisma = getMockPrisma();
-      (req as any).userId = 'user-123';
+      (req as any).user = { id: 'user-123' };
       req.params = { webhookId: 'wh-1' };
       req.query = {};
 
@@ -466,7 +466,7 @@ describe('WebhookController', () => {
 
     it('should use custom limit from query', async () => {
       const mockPrisma = getMockPrisma();
-      (req as any).userId = 'user-123';
+      (req as any).user = { id: 'user-123' };
       req.params = { webhookId: 'wh-1' };
       req.query = { limit: '10' };
 
@@ -488,7 +488,7 @@ describe('WebhookController', () => {
   describe('getWebhookStats', () => {
     it('should return webhook statistics', async () => {
       const mockPrisma = getMockPrisma();
-      (req as any).userId = 'user-123';
+      (req as any).user = { id: 'user-123' };
       req.params = { webhookId: 'wh-1' };
 
       mockPrisma.webhook.findUnique.mockResolvedValue({
@@ -521,7 +521,7 @@ describe('WebhookController', () => {
   describe('testWebhook', () => {
     it('should test webhook delivery successfully', async () => {
       const mockPrisma = getMockPrisma();
-      (req as any).userId = 'user-123';
+      (req as any).user = { id: 'user-123' };
       req.params = { webhookId: 'wh-1' };
 
       mockPrisma.webhook.findUnique.mockResolvedValue({
@@ -549,7 +549,7 @@ describe('WebhookController', () => {
   describe('retryWebhookEvent', () => {
     it('should retry a failed webhook event', async () => {
       const mockPrisma = getMockPrisma();
-      (req as any).userId = 'user-123';
+      (req as any).user = { id: 'user-123' };
       req.params = { webhookId: 'wh-1', eventId: 'evt-failed' };
 
       mockPrisma.webhook.findUnique.mockResolvedValue({
@@ -575,7 +575,7 @@ describe('WebhookController', () => {
 
     it('should return 404 when event belongs to different webhook', async () => {
       const mockPrisma = getMockPrisma();
-      (req as any).userId = 'user-123';
+      (req as any).user = { id: 'user-123' };
       req.params = { webhookId: 'wh-1', eventId: 'evt-other' };
 
       mockPrisma.webhook.findUnique.mockResolvedValue({
@@ -599,7 +599,7 @@ describe('WebhookController', () => {
   describe('getWebhookLogs', () => {
     it('should return webhook logs with default limit', async () => {
       const mockPrisma = getMockPrisma();
-      (req as any).userId = 'user-123';
+      (req as any).user = { id: 'user-123' };
       req.params = { webhookId: 'wh-1' };
       req.query = {};
 

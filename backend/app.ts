@@ -11,6 +11,7 @@ import { sanitizeInput } from './middleware/inputSanitization';
 import { captureAuditContext, auditRateLimit, auditAuth, auditAdmin, auditPayment, auditDocument } from './middleware/auditMiddleware';
 import auditRoutes from './routes/auditRoutes';
 import fraudRoutes from './routes/fraudRoutes';
+import webhookRoutes from './routes/webhookRoutes';
 import { swaggerSpec, getVersionedSwaggerSpec } from './swagger';
 import { apiVersioningConfig } from './config/api-versioning';
 import { AuthenticationController } from './controllers/AuthenticationController';
@@ -33,6 +34,7 @@ import { errorHandler, getErrorStats, getErrorLogs } from './middleware/centrali
 import ConnectionPoolManager from './databases/ConnectionPoolManager';
 import scheduledPaymentRoutes from './routes/scheduledPaymentRoutes';
 import { scheduledPaymentService } from './services/ScheduledPaymentService';
+import { webhookQueueService } from './services/WebhookQueueService';
 import { initializeCacheSystem } from './services/cache/CacheInitializer';
 import { requestTimeout } from './middleware/requestTimeout';
 
@@ -138,6 +140,11 @@ if (AUTH_ENABLED) {
 // 13. Fraud detection API (ML scoring 0-100, manual review workflow, adaptive learning)
 if (AUTH_ENABLED) {
   app.use('/api/fraud', fraudRoutes);
+}
+
+// 13b. Webhook delivery, management, and admin dashboard API
+if (AUTH_ENABLED) {
+  app.use('/api/webhooks', webhookRoutes);
 }
 
 // 14. API Documentation
@@ -454,6 +461,11 @@ app.use('/api/scheduled-payments', scheduledPaymentRoutes);
 
 // Start the scheduled payment cron job
 scheduledPaymentService.startScheduler();
+
+// Nothing else in the app imports webhookQueueService — without this,
+// its interval (which now drives all webhook retry delivery via
+// WebhookService.processPendingRetries) would never start.
+void webhookQueueService;
 
 // Setup global error handling
 setupGlobalErrorHandling(app);

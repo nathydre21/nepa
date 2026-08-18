@@ -58,7 +58,7 @@ export class WebhookController {
       // Validate the event type is in the webhook's subscribed events list
       const webhook = await prisma.webhook.findUnique({
         where: { id: webhookId },
-        select: { events: true, userId: true },
+        select: { events: true, userId: true, url: true },
       });
 
       if (!webhook) {
@@ -79,12 +79,16 @@ export class WebhookController {
       // Log the received webhook event for audit trail
       logger.info(`Webhook ${webhookId} received verified event: ${eventType}`);
 
-      // Store the webhook event in the database for processing and tracking
+      // Store the webhook event in the database for processing and tracking.
+      // payload is stored as-is (not stringified) since it's a Prisma Json
+      // column, matching the convention used for outbound events in
+      // WebhookService.deliverWebhookEvent.
       const webhookEvent = await prisma.webhookEvent.create({
         data: {
           webhookId,
           eventType,
-          payload: JSON.stringify(data || {}),
+          payload: data || {},
+          deliveryUrl: webhook.url,
           status: 'PENDING',
         },
       });
@@ -117,7 +121,7 @@ export class WebhookController {
   static async registerWebhook(req: Request, res: Response): Promise<void> {
     try {
       const { url, events, description, retryPolicy, maxRetries, retryDelaySeconds, timeoutSeconds, headers } = req.body;
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
 
       // Validation
       if (!url || !events || events.length === 0) {
@@ -176,7 +180,7 @@ export class WebhookController {
    */
   static async getUserWebhooks(req: Request, res: Response): Promise<void> {
     try {
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
 
       const webhooks = await webhookService.getUserWebhooks(userId);
 
@@ -207,7 +211,7 @@ export class WebhookController {
   static async updateWebhook(req: Request, res: Response): Promise<void> {
     try {
       const { webhookId } = req.params;
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
       const updates = req.body;
 
       // Verify ownership
@@ -251,7 +255,7 @@ export class WebhookController {
   static async deleteWebhook(req: Request, res: Response): Promise<void> {
     try {
       const { webhookId } = req.params;
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
 
       // Verify ownership
       const webhook = await prisma.webhook.findUnique({
@@ -287,7 +291,7 @@ export class WebhookController {
   static async getWebhookEvents(req: Request, res: Response): Promise<void> {
     try {
       const { webhookId } = req.params;
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
       const { limit = '50' } = req.query;
 
       // Verify ownership
@@ -333,7 +337,7 @@ export class WebhookController {
   static async getWebhookStats(req: Request, res: Response): Promise<void> {
     try {
       const { webhookId } = req.params;
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
 
       // Verify ownership
       const webhook = await prisma.webhook.findUnique({
@@ -369,7 +373,7 @@ export class WebhookController {
   static async testWebhook(req: Request, res: Response): Promise<void> {
     try {
       const { webhookId } = req.params;
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
 
       // Verify ownership
       const webhook = await prisma.webhook.findUnique({
@@ -405,7 +409,7 @@ export class WebhookController {
   static async retryWebhookEvent(req: Request, res: Response): Promise<void> {
     try {
       const { webhookId, eventId } = req.params;
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
 
       // Verify ownership
       const webhook = await prisma.webhook.findUnique({
@@ -451,7 +455,7 @@ export class WebhookController {
   static async getWebhookLogs(req: Request, res: Response): Promise<void> {
     try {
       const { webhookId } = req.params;
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
       const { limit = '100' } = req.query;
 
       // Verify ownership

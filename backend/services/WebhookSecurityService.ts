@@ -37,7 +37,7 @@ export interface SecurityAuditLog {
   timestamp: Date;
 }
 
-class WebhookSecurityService {
+export class WebhookSecurityService {
   private rateLimitStore: Map<string, { count: number; resetTime: number }> = new Map();
   private blockedIPs: Set<string> = new Set();
   private auditLogs: SecurityAuditLog[] = [];
