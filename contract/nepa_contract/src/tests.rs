@@ -1,5 +1,5 @@
 use super::*;
-use soroban_sdk::{testutils::{Address as TestAddress, Ledger as TestLedger}, Env, Address};
+use soroban_sdk::{testutils::Address as _, Address, Env};
 
 fn create_test_env() -> Env {
     let env = Env::default();
@@ -8,7 +8,7 @@ fn create_test_env() -> Env {
 }
 
 fn create_test_address(env: &Env) -> Address {
-    Address::from_string(&String::from_str(env, "test_address"))
+    Address::generate(env)
 }
 
 fn create_test_oracle_config() -> OracleConfig {
@@ -51,15 +51,22 @@ fn test_oracle_initialization() {
 
     OracleManager::initialize_oracle(env.clone(), admin.clone(), config.clone());
 
-    let stored_config: OracleConfig = env.storage()
+    let stored_config: OracleConfig = env
+        .storage()
         .instance()
         .get(&symbol_short!("OR_CONF"))
         .unwrap();
-    
+
     assert_eq!(stored_config.max_age_seconds, config.max_age_seconds);
-    assert_eq!(stored_config.min_reliability_score, config.min_reliability_score);
+    assert_eq!(
+        stored_config.min_reliability_score,
+        config.min_reliability_score
+    );
     assert_eq!(stored_config.fallback_enabled, config.fallback_enabled);
-    assert_eq!(stored_config.cost_limit_per_call, config.cost_limit_per_call);
+    assert_eq!(
+        stored_config.cost_limit_per_call,
+        config.cost_limit_per_call
+    );
 }
 
 #[test]
@@ -68,11 +75,16 @@ fn test_add_and_get_price_feed() {
     let admin = create_test_address(&env);
     let config = create_test_oracle_config();
     let feed_address = create_test_address(&env);
-    let price_feed = create_test_price_feed(&env, feed_address);
+    let price_feed = create_test_price_feed(&env, feed_address.clone());
     let feed_id = String::from_str(&env, "ETH_USD");
 
     OracleManager::initialize_oracle(env.clone(), admin.clone(), config);
-    OracleManager::add_price_feed(env.clone(), admin.clone(), feed_id.clone(), price_feed.clone());
+    OracleManager::add_price_feed(
+        env.clone(),
+        admin.clone(),
+        feed_id.clone(),
+        price_feed.clone(),
+    );
 
     let retrieved_feed = OracleManager::get_price_feed(env.clone(), feed_id.clone()).unwrap();
 
@@ -96,7 +108,8 @@ fn test_update_price_feed() {
 
     let new_price = 350000000000;
     let new_timestamp = 1640995300;
-    let result = OracleManager::update_price_feed(env.clone(), feed_id.clone(), new_price, new_timestamp);
+    let result =
+        OracleManager::update_price_feed(env.clone(), feed_id.clone(), new_price, new_timestamp);
     assert!(result.is_ok());
 
     let updated_feed = OracleManager::get_price_feed(env.clone(), feed_id).unwrap();
@@ -117,9 +130,10 @@ fn test_price_feed_data_too_old() {
     OracleManager::add_price_feed(env.clone(), admin.clone(), feed_id.clone(), price_feed);
 
     let old_timestamp = 1640995200 - 1000;
-    let result = OracleManager::update_price_feed(env.clone(), feed_id, 300000000000, old_timestamp);
+    let result =
+        OracleManager::update_price_feed(env.clone(), feed_id, 300000000000, old_timestamp);
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err(), "Data too old");
+    assert_eq!(result.unwrap_err(), String::from_str(&env, "Data too old"));
 }
 
 #[test]
@@ -131,7 +145,12 @@ fn test_add_and_get_utility_rate() {
     let rate_id = String::from_str(&env, "electricity_LAGOS");
 
     OracleManager::initialize_oracle(env.clone(), admin.clone(), config);
-    OracleManager::add_utility_rate(env.clone(), admin.clone(), rate_id.clone(), utility_rate.clone());
+    OracleManager::add_utility_rate(
+        env.clone(),
+        admin.clone(),
+        rate_id.clone(),
+        utility_rate.clone(),
+    );
 
     let retrieved_rate = OracleManager::get_utility_rate(env.clone(), rate_id.clone()).unwrap();
 
@@ -154,7 +173,8 @@ fn test_update_utility_rate() {
 
     let new_rate = 150000;
     let new_timestamp = 1640995300;
-    let result = OracleManager::update_utility_rate(env.clone(), rate_id.clone(), new_rate, new_timestamp);
+    let result =
+        OracleManager::update_utility_rate(env.clone(), rate_id.clone(), new_rate, new_timestamp);
     assert!(result.is_ok());
 
     let updated_rate = OracleManager::get_utility_rate(env.clone(), rate_id).unwrap();
@@ -210,7 +230,7 @@ fn test_fallback_price() {
         cost_limit_per_call: 1000000,
     };
     let feed_address = create_test_address(&env);
-    let price_feed = create_test_price_feed(&env, feed_address);
+    let price_feed = create_test_price_feed(&env, feed_address.clone());
     let feed_id = String::from_str(&env, "ETH_USD");
 
     OracleManager::initialize_oracle(env.clone(), admin.clone(), config);
@@ -231,7 +251,7 @@ fn test_fallback_price() {
     };
     let old_feed_id = String::from_str(&env, "BTC_USD");
     OracleManager::add_price_feed(env.clone(), admin.clone(), old_feed_id.clone(), old_feed);
-    
+
     let old_fallback_price = OracleManager::get_fallback_price(env.clone(), old_feed_id);
     assert!(old_fallback_price.is_none());
 }
@@ -281,7 +301,10 @@ fn test_oracle_cost_tracking() {
 
     let expensive_call = OracleManager::track_oracle_cost(env.clone(), 2000000);
     assert!(expensive_call.is_err());
-    assert_eq!(expensive_call.unwrap_err(), "Cost exceeds limit per call");
+    assert_eq!(
+        expensive_call.unwrap_err(),
+        String::from_str(&env, "Cost exceeds limit per call")
+    );
 }
 
 #[test]
@@ -323,7 +346,7 @@ fn test_enhanced_billing_with_oracle() {
         String::from_str(&env, "meter123"),
         100000000,
         String::from_str(&env, "NGN"),
-        true
+        true,
     );
 
     assert!(result.is_ok());
@@ -350,7 +373,7 @@ fn test_utility_billing() {
         50000,
         String::from_str(&env, "electricity"),
         String::from_str(&env, "LAGOS"),
-        String::from_str(&env, "USD")
+        String::from_str(&env, "USD"),
     );
 
     assert!(result.is_ok());
@@ -358,11 +381,11 @@ fn test_utility_billing() {
     let details = NepaBillingContract::get_billing_details(
         env.clone(),
         String::from_str(&env, "meter456"),
-        env.ledger().timestamp()
+        env.ledger().timestamp(),
     );
     assert!(details.is_some());
-    
-    let (kwh, rate, amount, utility_type) = details.unwrap();
+
+    let (kwh, rate, _amount, utility_type) = details.unwrap();
     assert_eq!(kwh, 50000);
     assert_eq!(rate, 120000);
     assert_eq!(utility_type, String::from_str(&env, "electricity"));
@@ -374,7 +397,7 @@ fn test_oracle_reliability_validation() {
     let admin = create_test_address(&env);
     let user = create_test_address(&env);
     let token_address = create_test_address(&env);
-    
+
     let config = OracleConfig {
         max_age_seconds: 300,
         min_reliability_score: 95,
@@ -390,7 +413,7 @@ fn test_oracle_reliability_validation() {
         String::from_str(&env, "meter789"),
         100000000,
         String::from_str(&env, "NGN"),
-        true
+        true,
     );
 
     assert!(result.is_err());

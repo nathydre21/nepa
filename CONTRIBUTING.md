@@ -65,6 +65,16 @@ npm run dev
 cd ../frontend && npm run dev
 ```
 
+## Contract pre-commit hook
+
+The repository includes a pre-commit hook for the Soroban contract. After installing Rust, enable it once in your checkout:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The hook runs `cargo clippy -- -D warnings` from `contract/nepa_contract` before each commit.
+
 ## Running Tests
 
 ```bash

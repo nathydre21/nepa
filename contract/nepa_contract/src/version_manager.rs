@@ -1,5 +1,6 @@
-use soroban_sdk::{contract, contractimpl, Address, Env, Symbol, Map};
+use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, Symbol};
 
+#[contracttype]
 #[derive(Clone)]
 pub struct ContractVersion {
     pub version: u32,
@@ -9,22 +10,20 @@ pub struct ContractVersion {
     pub backward_compatible: bool,
 }
 
-#[contract]
 pub struct VersionManager;
 
-#[contractimpl]
 impl VersionManager {
     /// Initialize version manager
     pub fn initialize(env: Env, admin: Address) {
         env.storage()
             .instance()
-            .set(&Symbol::short("ADMIN"), &admin);
-        
+            .set(&symbol_short!("ADMIN"), &admin);
+
         // Initialize version registry
         let version_registry: Map<u32, ContractVersion> = Map::new(&env);
         env.storage()
             .instance()
-            .set(&Symbol::short("VERSIONS"), &version_registry);
+            .set(&symbol_short!("VERS"), &version_registry);
     }
 
     /// Register a new version
@@ -37,28 +36,30 @@ impl VersionManager {
         backward_compatible: bool,
     ) -> Result<(), Symbol> {
         // Verify admin
-        let current_admin = env.storage()
+        let current_admin = env
+            .storage()
             .instance()
-            .get::<Symbol, Address>(&Symbol::short("ADMIN"))
+            .get::<Symbol, Address>(&symbol_short!("ADMIN"))
             .unwrap();
-        
+
         if current_admin != admin {
-            return Err(Symbol::short("UNAUTHORIZED"));
+            return Err(symbol_short!("UNAUTH"));
         }
 
         // Create version info
         let version_info = ContractVersion {
             version,
-            implementation_address,
+            implementation_address: implementation_address.clone(),
             deployment_timestamp: env.ledger().timestamp(),
             migration_required,
             backward_compatible,
         };
 
         // Get existing versions
-        let mut versions: Map<u32, ContractVersion> = env.storage()
+        let mut versions: Map<u32, ContractVersion> = env
+            .storage()
             .instance()
-            .get(&Symbol::short("VERSIONS"))
+            .get(&symbol_short!("VERS"))
             .unwrap_or_else(|| Map::new(&env));
 
         // Add new version
@@ -67,23 +68,27 @@ impl VersionManager {
         // Store updated versions
         env.storage()
             .instance()
-            .set(&Symbol::short("VERSIONS"), &versions);
+            .set(&symbol_short!("VERS"), &versions);
 
         // Emit registration event
-        env.events()
-            .publish(
-                (Symbol::short("VERSION_REGISTERED"), version),
-                (implementation_address, migration_required, backward_compatible),
-            );
+        env.events().publish(
+            (symbol_short!("VER_REG"), version),
+            (
+                implementation_address,
+                migration_required,
+                backward_compatible,
+            ),
+        );
 
         Ok(())
     }
 
     /// Get version info
     pub fn get_version_info(env: Env, version: u32) -> Option<ContractVersion> {
-        let versions: Map<u32, ContractVersion> = env.storage()
+        let versions: Map<u32, ContractVersion> = env
+            .storage()
             .instance()
-            .get(&Symbol::short("VERSIONS"))
+            .get(&symbol_short!("VERS"))
             .unwrap_or_else(|| Map::new(&env));
 
         versions.get(version)
@@ -91,9 +96,10 @@ impl VersionManager {
 
     /// Get latest version
     pub fn get_latest_version(env: Env) -> Option<u32> {
-        let versions: Map<u32, ContractVersion> = env.storage()
+        let versions: Map<u32, ContractVersion> = env
+            .storage()
             .instance()
-            .get(&Symbol::short("VERSIONS"))
+            .get(&symbol_short!("VERS"))
             .unwrap_or_else(|| Map::new(&env));
 
         if versions.is_empty() {
@@ -113,16 +119,15 @@ impl VersionManager {
 
     /// Check if upgrade is safe
     pub fn is_upgrade_safe(env: Env, from_version: u32, to_version: u32) -> Result<bool, Symbol> {
-        let versions: Map<u32, ContractVersion> = env.storage()
+        let versions: Map<u32, ContractVersion> = env
+            .storage()
             .instance()
-            .get(&Symbol::short("VERSIONS"))
+            .get(&symbol_short!("VERS"))
             .unwrap_or_else(|| Map::new(&env));
 
-        let from_info = versions.get(from_version)
-            .ok_or(Symbol::short("FROM_VERSION_NOT_FOUND"))?;
-        
-        let to_info = versions.get(to_version)
-            .ok_or(Symbol::short("TO_VERSION_NOT_FOUND"))?;
+        versions.get(from_version).ok_or(symbol_short!("FROM_NF"))?;
+
+        let to_info = versions.get(to_version).ok_or(symbol_short!("TO_NF"))?;
 
         // Check if target version is backward compatible
         if !to_info.backward_compatible && from_version < to_version {
@@ -142,15 +147,16 @@ impl VersionManager {
     pub fn list_versions(env: Env) -> Map<u32, ContractVersion> {
         env.storage()
             .instance()
-            .get(&Symbol::short("VERSIONS"))
+            .get(&symbol_short!("VERS"))
             .unwrap_or_else(|| Map::new(&env))
     }
 
     /// Get admin
+    #[allow(dead_code)]
     pub fn get_admin(env: Env) -> Address {
         env.storage()
             .instance()
-            .get(&Symbol::short("ADMIN"))
+            .get(&symbol_short!("ADMIN"))
             .unwrap()
     }
 }

@@ -96,6 +96,7 @@ jspm_packages/
 # Rust/Soroban
 target/
 Cargo.lock
+!contract/nepa_contract/Cargo.lock
 **/*.rs.bk
 
 # Stellar/Soroban
