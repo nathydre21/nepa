@@ -113,7 +113,7 @@ jobs:
         run: |
           cd backend
           npm install
-          npm run lint:check || echo "⚠️ Backend lint warnings (non-blocking)"
+          npm run lint:check
       - name: Frontend lint check
         run: |
           cd frontend
