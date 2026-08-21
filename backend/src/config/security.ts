@@ -6,10 +6,7 @@
 import helmet from 'helmet';
 import cors, { CorsOptions } from 'cors';
 import { Express } from 'express';
-<<<<<<< HEAD:backend/src/config/security.ts
-=======
 import crypto from 'crypto';
->>>>>>> fix/caching-error-handling-performance:src/config/security.ts
 import { securityConfig } from '../security/SecurityConfig';
 
 export const configureSecurity = (app: Express): void => {

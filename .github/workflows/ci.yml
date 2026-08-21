@@ -42,7 +42,7 @@ jobs:
       - name: Lint backend
         run: |
           cd backend
-          npm run lint:check || echo "⚠️ Backend lint warnings (non-blocking)"
+          npm run lint:check
 
       - name: Type-check backend
         continue-on-error: true

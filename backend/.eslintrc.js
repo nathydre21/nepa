@@ -6,12 +6,13 @@ module.exports = {
     ecmaFeatures: {
       jsx: true,
     },
-    project: './tsconfig.json',
+    project: './tsconfig.eslint.json',
+    tsconfigRootDir: __dirname,
   },
   plugins: ['@typescript-eslint'],
   extends: [
     'eslint:recommended',
-    '@typescript-eslint/recommended',
+    'plugin:@typescript-eslint/recommended',
   ],
   env: {
     browser: true,
@@ -25,7 +26,15 @@ module.exports = {
     '@typescript-eslint/explicit-function-return-type': 'off',
     '@typescript-eslint/explicit-module-boundary-types': 'off',
     '@typescript-eslint/no-empty-function': 'off',
+    // Keep existing backend conventions visible while the CI gate blocks errors.
+    '@typescript-eslint/ban-types': 'warn',
+    '@typescript-eslint/no-namespace': 'warn',
+    '@typescript-eslint/no-this-alias': 'warn',
+    '@typescript-eslint/no-var-requires': 'warn',
+    'no-case-declarations': 'warn',
     'no-console': 'off',
+    'no-useless-escape': 'warn',
+    'prefer-const': 'warn',
   },
   ignorePatterns: [
     'dist/',
