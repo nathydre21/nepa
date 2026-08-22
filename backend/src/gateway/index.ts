@@ -1,1 +1,369 @@
-import express from 'express';\nimport cors from 'cors';\nimport helmet from 'helmet';\nimport rateLimit from 'express-rate-limit';\nimport { createProxyMiddleware } from 'http-proxy-middleware';\nimport { Request, Response, NextFunction } from 'express';\nimport { authMiddleware } from './middleware/auth';\nimport { loggingMiddleware } from './middleware/logging';\nimport { validationMiddleware } from './middleware/validation';\nimport { transformMiddleware } from './middleware/transform';\nimport { monitoringMiddleware } from './middleware/monitoring';\n\n// Service registry for microservices\ninterface ServiceConfig {\n  name: string;\n  url: string;\n  version: string;\n  healthCheck?: string;\n  timeout?: number;\n  retries?: number;\n  circuitBreaker?: {\n    enabled: boolean;\n    threshold: number;\n    timeout: number;\n  };\n}\n\nconst services: Record<string, ServiceConfig> = {\n  'user-service': {\n    name: 'User Service',\n    url: process.env.USER_SERVICE_URL || 'http://localhost:3001',\n    version: 'v1',\n    healthCheck: '/health',\n    timeout: 5000,\n    retries: 3,\n    circuitBreaker: {\n      enabled: true,\n      threshold: 5,\n      timeout: 60000,\n    },\n  },\n  'payment-service': {\n    name: 'Payment Service',\n    url: process.env.PAYMENT_SERVICE_URL || 'http://localhost:3002',\n    version: 'v1',\n    healthCheck: '/health',\n    timeout: 10000,\n    retries: 3,\n    circuitBreaker: {\n      enabled: true,\n      threshold: 3,\n      timeout: 30000,\n    },\n  },\n  'notification-service': {\n    name: 'Notification Service',\n    url: process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:3003',\n    version: 'v1',\n    healthCheck: '/health',\n    timeout: 3000,\n    retries: 2,\n  },\n  'analytics-service': {\n    name: 'Analytics Service',\n    url: process.env.ANALYTICS_SERVICE_URL || 'http://localhost:3004',\n    version: 'v1',\n    healthCheck: '/health',\n    timeout: 2000,\n    retries: 2,\n  },\n};\n\n// Circuit breaker state\ninterface CircuitState {\n  failures: number;\n  lastFailureTime: number;\n  state: 'CLOSED' | 'HALF_OPEN' | 'OPEN';\n}\n\nconst circuitStates = new Map<string, CircuitState>();\n\n// Rate limiting configurations\nconst rateLimitConfigs = {\n  'user-service': {\n    windowMs: 15 * 60 * 1000, // 15 minutes\n    max: 100, // 100 requests per window\n    message: 'Too many requests from this IP, please try again later.',\n  },\n  'payment-service': {\n    windowMs: 5 * 60 * 1000, // 5 minutes\n    max: 50, // 50 requests per window\n    message: 'Too many payment requests, please try again later.',\n  },\n  'notification-service': {\n    windowMs: 60 * 60 * 1000, // 1 hour\n    max: 200, // 200 requests per hour\n    message: 'Too many notifications, please try again later.',\n  },\n  'analytics-service': {\n    windowMs: 60 * 60 * 1000, // 1 hour\n    max: 1000, // 1000 requests per hour\n    message: 'Too many analytics requests, please try again later.',\n  },\n};\n\n// Create Express app\nconst app = express();\n\n// Security middleware\napp.use(helmet({\n  contentSecurityPolicy: {\n    directives: {\n      defaultSrc: [\"'self'\"],\n      styleSrc: [\"'self'\", \"'unsafe-inline'\"],\n      scriptSrc: [\"'self'\"],\n      imgSrc: [\"'self'\", \"data:\", \"https:\"],\n      connectSrc: [\"'self'\", \"https:\"],\n    },\n  },\n  hsts: {\n    maxAge: 31536000,\n    includeSubDomains: true,\n    preload: true,\n  },\n}));\n\n// CORS configuration\napp.use(cors({\n  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],\n  credentials: true,\n  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],\n  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],\n}));\n\n// Request logging and monitoring\napp.use(loggingMiddleware);\napp.use(monitoringMiddleware);\n\n// Request validation and transformation\napp.use(validationMiddleware);\napp.use(transformMiddleware);\n\n// Authentication middleware\napp.use(authMiddleware);\n\n// Rate limiting per service\nObject.entries(services).forEach(([serviceName, config]) => {\n  const rateLimitConfig = rateLimitConfigs[serviceName];\n  if (rateLimitConfig) {\n    const limiter = rateLimit({\n      windowMs: rateLimitConfig.windowMs,\n      max: rateLimitConfig.max,\n      message: rateLimitConfig.message,\n      standardHeaders: true,\n      legacyHeaders: false,\n    });\n    \n    // Apply rate limiting to specific service routes\n    app.use(`/api/${config.version}/${serviceName}`, limiter);\n  }\n});\n\n// Health check endpoint for the gateway\napp.get('/health', (req, res) => {\n  const healthStatus = {\n    status: 'healthy',\n    timestamp: new Date().toISOString(),\n    services: {},\n    uptime: process.uptime(),\n  };\n\n  // Check health of all services\n  const healthChecks = Promise.allSettled(\n    Object.entries(services).map(async ([serviceName, config]) => {\n      try {\n        if (config.healthCheck) {\n          const response = await fetch(`${config.url}${config.healthCheck}`, {\n            method: 'GET',\n            timeout: 5000,\n          });\n          \n          if (response.ok) {\n            healthStatus.services[serviceName] = {\n              status: 'healthy',\n              responseTime: Date.now(),\n            };\n            return { status: 'fulfilled', value: serviceName };\n          }\n        }\n        \n        healthStatus.services[serviceName] = {\n          status: 'unknown',\n          error: 'No health check configured',\n        };\n        return { status: 'fulfilled', value: serviceName };\n      } catch (error) {\n        healthStatus.services[serviceName] = {\n          status: 'unhealthy',\n          error: error instanceof Error ? error.message : 'Unknown error',\n          lastCheck: new Date().toISOString(),\n        };\n        return { status: 'fulfilled', value: serviceName };\n      }\n    })\n  );\n\n  await healthChecks;\n  \n  res.json(healthStatus);\n});\n\n// API documentation endpoint\napp.get('/api/docs', (req, res) => {\n  const docs = {\n    title: 'NEPA API Gateway',\n    version: '1.0.0',\n    description: 'Centralized API gateway for NEPA microservices',\n    services: Object.entries(services).map(([name, config]) => ({\n      name,\n      displayName: config.name,\n      version: config.version,\n      baseUrl: `/api/${config.version}/${name}`,\n      healthCheck: config.healthCheck ? `${config.url}${config.healthCheck}` : null,\n      timeout: config.timeout,\n      retries: config.retries,\n      circuitBreaker: config.circuitBreaker,\n    })),\n    authentication: {\n      type: 'Bearer Token',\n      description: 'JWT token required for authenticated endpoints',\n    },\n    rateLimiting: Object.entries(rateLimitConfigs).map(([service, config]) => ({\n      service,\n      windowMs: config.windowMs,\n      max: config.max,\n      description: config.message,\n    })),\n    security: {\n      cors: {\n        enabled: true,\n        allowedOrigins: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],\n      },\n      helmet: {\n        enabled: true,\n        csp: {\n          enabled: true,\n          policy: 'default-src \\'self\\'; style-src \\'self\\' \\'unsafe-inline\\'; script-src \\'self\\'; img-src \\'self\\' data: https:; connect-src \\'self\\' https:;',\n        },\n      },\n    },\n  };\n  \n  res.json(docs);\n});\n\n// Create proxy middleware for each service\nObject.entries(services).forEach(([serviceName, config]) => {\n  // Check circuit breaker state\n  const checkCircuitBreaker = (req: Request, res: Response, next: NextFunction) => {\n    const circuitState = circuitStates.get(serviceName);\n    \n    if (circuitState?.state === 'OPEN') {\n      // Check if circuit should be half-open\n      const timeSinceOpen = Date.now() - circuitState.lastFailureTime;\n      if (timeSinceOpen > 60000) { // 1 minute\n        circuitState.state = 'HALF_OPEN';\n      } else {\n        return res.status(503).json({\n          error: 'Service temporarily unavailable',\n          service: serviceName,\n          reason: 'Circuit breaker is open',\n          retryAfter: new Date(Date.now() + 60000).toISOString(),\n        });\n      }\n    }\n    \n    next();\n  };\n  \n  // Update circuit breaker on failures\n  const updateCircuitBreaker = (success: boolean) => {\n    const currentState = circuitStates.get(serviceName) || { failures: 0, lastFailureTime: 0, state: 'OPEN' as const };\n    \n    if (success) {\n      currentState.failures = 0;\n      currentState.state = 'OPEN';\n    } else {\n      currentState.failures++;\n      currentState.lastFailureTime = Date.now();\n      \n      if (currentState.failures >= config.circuitBreaker?.threshold) {\n        currentState.state = 'OPEN';\n      }\n    }\n    \n    circuitStates.set(serviceName, currentState);\n  };\n  \n  // Create proxy middleware\n  const proxyOptions = {\n    target: config.url,\n    changeOrigin: true,\n    pathRewrite: {\n      [`^/api/${config.version}/${serviceName}`]: '',\n    },\n    onError: (err, req, res) => {\n      console.error(`Proxy error for ${serviceName}:`, err);\n      updateCircuitBreaker(false);\n      \n      res.status(502).json({\n        error: 'Service unavailable',\n        service: serviceName,\n        message: 'Service temporarily unavailable',\n        timestamp: new Date().toISOString(),\n      });\n    },\n    onProxyReq: (proxyReq, req) => {\n      console.log(`Proxying ${req.method} ${req.originalUrl} to ${serviceName}`);\n    },\n    onProxyRes: (proxyRes, req, res) => {\n      updateCircuitBreaker(true);\n      \n      // Add response headers\n      res.setHeader('X-Gateway-Service', serviceName);\n      res.setHeader('X-Gateway-Version', config.version);\n      res.setHeader('X-Response-Time', Date.now().toString());\n    },\n    timeout: config.timeout,\n  };\n  \n  // Apply middleware chain\n  app.use(`/api/${config.version}/${serviceName}`, checkCircuitBreaker);\n  app.use(`/api/${config.version}/${serviceName}`, createProxyMiddleware(proxyOptions));\n});\n\n// Global error handler\napp.use((err: Error, req: Request, res: Response, next: NextFunction) => {\n  console.error('Gateway error:', err);\n  \n  res.status(500).json({\n    error: 'Internal server error',\n    message: err.message,\n    timestamp: new Date().toISOString(),\n    requestId: req.headers['x-request-id'],\n  });\n});\n\n// 404 handler\napp.use('*', (req, res) => {\n  res.status(404).json({\n    error: 'Not found',\n    message: `Route ${req.originalUrl} not found`,\n    availableServices: Object.keys(services),\n    documentation: '/api/docs',\n    timestamp: new Date().toISOString(),\n  });\n});\n\n// Start server\nconst PORT = process.env.GATEWAY_PORT || 3000;\n\napp.listen(PORT, () => {\n  console.log(`🚀 NEPA API Gateway running on port ${PORT}`);\n  console.log(`📋 Available services:`, Object.keys(services));\n  console.log(`📚 API Documentation: http://localhost:${PORT}/api/docs`);\n  console.log(`💚 Health Check: http://localhost:${PORT}/health`);\n});\n\nexport default app;
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import { createProxyMiddleware } from 'http-proxy-middleware';
+import { Request, Response, NextFunction } from 'express';
+import { authMiddleware } from './middleware/auth';
+import { loggingMiddleware } from './middleware/logging';
+import { validationMiddleware } from './middleware/validation';
+import { transformMiddleware } from './middleware/transform';
+import { monitoringMiddleware } from './middleware/monitoring';
+
+// Service registry for microservices
+interface ServiceConfig {
+  name: string;
+  url: string;
+  version: string;
+  healthCheck?: string;
+  timeout?: number;
+  retries?: number;
+  circuitBreaker?: {
+    enabled: boolean;
+    threshold: number;
+    timeout: number;
+  };
+}
+
+const services: Record<string, ServiceConfig> = {
+  'user-service': {
+    name: 'User Service',
+    url: process.env.USER_SERVICE_URL || 'http://localhost:3001',
+    version: 'v1',
+    healthCheck: '/health',
+    timeout: 5000,
+    retries: 3,
+    circuitBreaker: {
+      enabled: true,
+      threshold: 5,
+      timeout: 60000,
+    },
+  },
+  'payment-service': {
+    name: 'Payment Service',
+    url: process.env.PAYMENT_SERVICE_URL || 'http://localhost:3002',
+    version: 'v1',
+    healthCheck: '/health',
+    timeout: 10000,
+    retries: 3,
+    circuitBreaker: {
+      enabled: true,
+      threshold: 3,
+      timeout: 30000,
+    },
+  },
+  'notification-service': {
+    name: 'Notification Service',
+    url: process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:3003',
+    version: 'v1',
+    healthCheck: '/health',
+    timeout: 3000,
+    retries: 2,
+  },
+  'analytics-service': {
+    name: 'Analytics Service',
+    url: process.env.ANALYTICS_SERVICE_URL || 'http://localhost:3004',
+    version: 'v1',
+    healthCheck: '/health',
+    timeout: 2000,
+    retries: 2,
+  },
+};
+
+// Circuit breaker state
+interface CircuitState {
+  failures: number;
+  lastFailureTime: number;
+  state: 'CLOSED' | 'HALF_OPEN' | 'OPEN';
+}
+
+const circuitStates = new Map<string, CircuitState>();
+
+// Rate limiting configurations
+const rateLimitConfigs = {
+  'user-service': {
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // 100 requests per window
+    message: 'Too many requests from this IP, please try again later.',
+  },
+  'payment-service': {
+    windowMs: 5 * 60 * 1000, // 5 minutes
+    max: 50, // 50 requests per window
+    message: 'Too many payment requests, please try again later.',
+  },
+  'notification-service': {
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 200, // 200 requests per hour
+    message: 'Too many notifications, please try again later.',
+  },
+  'analytics-service': {
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 1000, // 1000 requests per hour
+    message: 'Too many analytics requests, please try again later.',
+  },
+};
+
+// Create Express app
+const app = express();
+
+// Security middleware
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "https:"],
+    },
+  },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true,
+  },
+}));
+
+// CORS configuration
+app.use(cors({
+  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+}));
+
+// Request logging and monitoring
+app.use(loggingMiddleware);
+app.use(monitoringMiddleware);
+
+// Request validation and transformation
+app.use(validationMiddleware);
+app.use(transformMiddleware);
+
+// Authentication middleware
+app.use(authMiddleware);
+
+// Rate limiting per service
+Object.entries(services).forEach(([serviceName, config]) => {
+  const rateLimitConfig = rateLimitConfigs[serviceName];
+  if (rateLimitConfig) {
+    const limiter = rateLimit({
+      windowMs: rateLimitConfig.windowMs,
+      max: rateLimitConfig.max,
+      message: rateLimitConfig.message,
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
+
+    // Apply rate limiting to specific service routes
+    app.use(`/api/${config.version}/${serviceName}`, limiter);
+  }
+});
+
+// Health check endpoint for the gateway
+app.get('/health', async (req, res) => {
+  const healthStatus = {
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    services: {},
+    uptime: process.uptime(),
+  };
+
+  // Check health of all services
+  const healthChecks = Promise.allSettled(
+    Object.entries(services).map(async ([serviceName, config]) => {
+      try {
+        if (config.healthCheck) {
+          const response = await fetch(`${config.url}${config.healthCheck}`, {
+            method: 'GET',
+            timeout: 5000,
+          });
+
+          if (response.ok) {
+            healthStatus.services[serviceName] = {
+              status: 'healthy',
+              responseTime: Date.now(),
+            };
+            return { status: 'fulfilled', value: serviceName };
+          }
+        }
+
+        healthStatus.services[serviceName] = {
+          status: 'unknown',
+          error: 'No health check configured',
+        };
+        return { status: 'fulfilled', value: serviceName };
+      } catch (error) {
+        healthStatus.services[serviceName] = {
+          status: 'unhealthy',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          lastCheck: new Date().toISOString(),
+        };
+        return { status: 'fulfilled', value: serviceName };
+      }
+    })
+  );
+
+  await healthChecks;
+
+  res.json(healthStatus);
+});
+
+// API documentation endpoint
+app.get('/api/docs', (req, res) => {
+  const docs = {
+    title: 'NEPA API Gateway',
+    version: '1.0.0',
+    description: 'Centralized API gateway for NEPA microservices',
+    services: Object.entries(services).map(([name, config]) => ({
+      name,
+      displayName: config.name,
+      version: config.version,
+      baseUrl: `/api/${config.version}/${name}`,
+      healthCheck: config.healthCheck ? `${config.url}${config.healthCheck}` : null,
+      timeout: config.timeout,
+      retries: config.retries,
+      circuitBreaker: config.circuitBreaker,
+    })),
+    authentication: {
+      type: 'Bearer Token',
+      description: 'JWT token required for authenticated endpoints',
+    },
+    rateLimiting: Object.entries(rateLimitConfigs).map(([service, config]) => ({
+      service,
+      windowMs: config.windowMs,
+      max: config.max,
+      description: config.message,
+    })),
+    security: {
+      cors: {
+        enabled: true,
+        allowedOrigins: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
+      },
+      helmet: {
+        enabled: true,
+        csp: {
+          enabled: true,
+          policy: 'default-src \'self\'; style-src \'self\' \'unsafe-inline\'; script-src \'self\'; img-src \'self\' data: https:; connect-src \'self\' https:;',
+        },
+      },
+    },
+  };
+
+  res.json(docs);
+});
+
+// Create proxy middleware for each service
+Object.entries(services).forEach(([serviceName, config]) => {
+  // Check circuit breaker state
+  const checkCircuitBreaker = (req: Request, res: Response, next: NextFunction) => {
+    const circuitState = circuitStates.get(serviceName);
+
+    if (circuitState?.state === 'OPEN') {
+      // Check if circuit should be half-open
+      const timeSinceOpen = Date.now() - circuitState.lastFailureTime;
+      if (timeSinceOpen > 60000) { // 1 minute
+        circuitState.state = 'HALF_OPEN';
+      } else {
+        return res.status(503).json({
+          error: 'Service temporarily unavailable',
+          service: serviceName,
+          reason: 'Circuit breaker is open',
+          retryAfter: new Date(Date.now() + 60000).toISOString(),
+        });
+      }
+    }
+
+    next();
+  };
+
+  // Update circuit breaker on failures
+  const updateCircuitBreaker = (success: boolean) => {
+    const currentState = circuitStates.get(serviceName) || { failures: 0, lastFailureTime: 0, state: 'OPEN' as const };
+
+    if (success) {
+      currentState.failures = 0;
+      currentState.state = 'OPEN';
+    } else {
+      currentState.failures++;
+      currentState.lastFailureTime = Date.now();
+
+      if (currentState.failures >= config.circuitBreaker?.threshold) {
+        currentState.state = 'OPEN';
+      }
+    }
+
+    circuitStates.set(serviceName, currentState);
+  };
+
+  // Create proxy middleware
+  const proxyOptions = {
+    target: config.url,
+    changeOrigin: true,
+    pathRewrite: {
+      [`^/api/${config.version}/${serviceName}`]: '',
+    },
+    onError: (err, req, res) => {
+      console.error(`Proxy error for ${serviceName}:`, err);
+      updateCircuitBreaker(false);
+
+      res.status(502).json({
+        error: 'Service unavailable',
+        service: serviceName,
+        message: 'Service temporarily unavailable',
+        timestamp: new Date().toISOString(),
+      });
+    },
+    onProxyReq: (proxyReq, req) => {
+      console.log(`Proxying ${req.method} ${req.originalUrl} to ${serviceName}`);
+    },
+    onProxyRes: (proxyRes, req, res) => {
+      updateCircuitBreaker(true);
+
+      // Add response headers
+      res.setHeader('X-Gateway-Service', serviceName);
+      res.setHeader('X-Gateway-Version', config.version);
+      res.setHeader('X-Response-Time', Date.now().toString());
+    },
+    timeout: config.timeout,
+  };
+
+  // Apply middleware chain
+  app.use(`/api/${config.version}/${serviceName}`, checkCircuitBreaker);
+  app.use(`/api/${config.version}/${serviceName}`, createProxyMiddleware(proxyOptions));
+});
+
+// Global error handler
+app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+  console.error('Gateway error:', err);
+
+  res.status(500).json({
+    error: 'Internal server error',
+    message: err.message,
+    timestamp: new Date().toISOString(),
+    requestId: req.headers['x-request-id'],
+  });
+});
+
+// 404 handler
+app.use('*', (req, res) => {
+  res.status(404).json({
+    error: 'Not found',
+    message: `Route ${req.originalUrl} not found`,
+    availableServices: Object.keys(services),
+    documentation: '/api/docs',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Start server
+const PORT = process.env.GATEWAY_PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`🚀 NEPA API Gateway running on port ${PORT}`);
+  console.log(`📋 Available services:`, Object.keys(services));
+  console.log(`📚 API Documentation: http://localhost:${PORT}/api/docs`);
+  console.log(`💚 Health Check: http://localhost:${PORT}/health`);
+});
+
+export default app;

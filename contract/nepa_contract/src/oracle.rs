@@ -1,4 +1,3 @@
-#![no_std]
 use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, String, Symbol};
 
 // Storage keys for oracle data
@@ -17,9 +16,10 @@ const ORACLE_CIRCUIT_BREAKER: Symbol = symbol_short!("CB_STATE");
 // SECURITY (Issue #411): Storage key for admin-set manual price overrides.
 // When an admin sets a manual override price for a feed, it takes priority
 // over both live and fallback prices. This is an emergency mechanism.
-const ORACLE_MANUAL_OVERRIDES: Symbol = symbol_short!("M_OVRD");
+const ORACLE_MANUAL_OVERRIDES: Symbol = symbol_short!("M_OVR");
 
 // Oracle data structures
+#[contracttype]
 #[derive(Clone)]
 #[contracttype]
 pub struct PriceFeed {
@@ -32,6 +32,7 @@ pub struct PriceFeed {
     pub reliability_score: u32,
 }
 
+#[contracttype]
 #[derive(Clone)]
 #[contracttype]
 pub struct UtilityRate {
@@ -43,6 +44,7 @@ pub struct UtilityRate {
     pub reliability_score: u32,
 }
 
+#[contracttype]
 #[derive(Clone)]
 #[contracttype]
 pub struct OracleConfig {
@@ -52,6 +54,7 @@ pub struct OracleConfig {
     pub cost_limit_per_call: i128,
 }
 
+#[contracttype]
 #[derive(Clone)]
 #[contracttype]
 pub struct OracleReliability {
@@ -62,6 +65,7 @@ pub struct OracleReliability {
     pub average_response_time: u64,
 }
 
+#[contracttype]
 #[derive(Clone)]
 #[contracttype]
 pub struct OracleCost {
@@ -73,6 +77,7 @@ pub struct OracleCost {
     pub last_reset: u64,
 }
 
+#[contracttype]
 #[derive(Clone)]
 #[contracttype]
 pub struct UpdateSchedule {
@@ -93,6 +98,7 @@ pub struct UpdateSchedule {
 ///   - CLOSED: Normal operation — oracle calls are attempted normally
 ///   - OPEN: Fallback mode — oracle calls are skipped, cached prices are used
 ///   - HALF_OPEN: Recovery mode — a test call is made to check if the oracle recovered
+#[contracttype]
 #[derive(Clone)]
 #[contracttype]
 pub struct CircuitBreaker {
@@ -110,6 +116,7 @@ pub struct CircuitBreaker {
 
 /// SECURITY (Issue #411): Manual price override entry set by admin.
 /// When present, this takes priority over both live and fallback prices.
+#[contracttype]
 #[derive(Clone)]
 #[contracttype]
 pub struct ManualOverride {
@@ -132,7 +139,7 @@ impl OracleManager {
 
     // Initialize oracle configuration
     pub fn initialize_oracle(env: Env, admin: Address, config: OracleConfig) {
-        Self::require_auth(&admin);
+        admin.require_auth();
 
         // Set initial configuration
         env.storage().instance().set(&ORACLE_CONFIG, &config);
@@ -172,7 +179,7 @@ impl OracleManager {
 
     // Add a new price feed
     pub fn add_price_feed(env: Env, admin: Address, feed_id: String, price_feed: PriceFeed) {
-        Self::require_auth(&admin);
+        admin.require_auth();
 
         let mut feeds: Map<String, PriceFeed> = env
             .storage()
@@ -197,26 +204,28 @@ impl OracleManager {
         feed_id: String,
         new_price: i128,
         timestamp: u64,
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), String> {
         let config: OracleConfig = env
             .storage()
             .instance()
             .get(&ORACLE_CONFIG)
-            .ok_or("Oracle not initialized")?;
+            .ok_or(String::from_str(&env, "Oracle not initialized"))?;
 
         // Check if data is too old
         let current_time = env.ledger().timestamp();
         if current_time > timestamp && (current_time - timestamp) > config.max_age_seconds {
-            return Err("Data too old");
+            return Err(String::from_str(&env, "Data too old"));
         }
 
         let mut feeds: Map<String, PriceFeed> = env
             .storage()
             .persistent()
             .get(&ORACLE_PRICE_FEEDS)
-            .ok_or("Price feed not found")?;
+            .ok_or(String::from_str(&env, "Price feed not found"))?;
 
-        let mut feed = feeds.get(feed_id.clone()).ok_or("Feed ID not found")?;
+        let mut feed = feeds
+            .get(feed_id.clone())
+            .ok_or(String::from_str(&env, "Feed ID not found"))?;
 
         // Update feed data
         feed.price = new_price;
@@ -233,7 +242,7 @@ impl OracleManager {
 
     // Add utility rate
     pub fn add_utility_rate(env: Env, admin: Address, rate_id: String, utility_rate: UtilityRate) {
-        Self::require_auth(&admin);
+        admin.require_auth();
 
         let mut rates: Map<String, UtilityRate> = env
             .storage()
@@ -261,26 +270,28 @@ impl OracleManager {
         rate_id: String,
         new_rate: i128,
         timestamp: u64,
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), String> {
         let config: OracleConfig = env
             .storage()
             .instance()
             .get(&ORACLE_CONFIG)
-            .ok_or("Oracle not initialized")?;
+            .ok_or(String::from_str(&env, "Oracle not initialized"))?;
 
         // Check if data is too old
         let current_time = env.ledger().timestamp();
         if current_time > timestamp && (current_time - timestamp) > config.max_age_seconds {
-            return Err("Data too old");
+            return Err(String::from_str(&env, "Data too old"));
         }
 
         let mut rates: Map<String, UtilityRate> = env
             .storage()
             .persistent()
             .get(&ORACLE_UTILITY_RATES)
-            .ok_or("Utility rate not found")?;
+            .ok_or(String::from_str(&env, "Utility rate not found"))?;
 
-        let mut rate = rates.get(rate_id.clone()).ok_or("Rate ID not found")?;
+        let mut rate = rates
+            .get(rate_id.clone())
+            .ok_or(String::from_str(&env, "Rate ID not found"))?;
 
         // Update rate data
         rate.rate_per_kwh = new_rate;
@@ -298,8 +309,9 @@ impl OracleManager {
     }
 
     // Validate external data
+    #[allow(dead_code)]
     pub fn validate_external_data(
-        env: Env,
+        _env: Env,
         data: i128,
         min_value: i128,
         max_value: i128,
@@ -353,7 +365,7 @@ impl OracleManager {
         env.storage()
             .instance()
             .get(&ORACLE_CIRCUIT_BREAKER)
-            .unwrap_or_else(|| CircuitBreaker {
+            .unwrap_or(CircuitBreaker {
                 state: 0, // CLOSED
                 consecutive_failures: 0,
                 failure_threshold: 5,
@@ -597,12 +609,12 @@ impl OracleManager {
         env: Env,
         feed_id: String,
         max_deviation_percent: i128,
-    ) -> Result<(i128, u32, bool), &'static str> {
+    ) -> Result<(i128, u32, bool), String> {
         let config: OracleConfig = env
             .storage()
             .instance()
             .get(&ORACLE_CONFIG)
-            .ok_or("Oracle not initialized")?;
+            .ok_or(String::from_str(&env, "Oracle not initialized"))?;
 
         // --- Step 1: Check for manual admin override (highest priority) ---
         if let Some(override_entry) = Self::get_manual_override(&env, &feed_id) {
@@ -657,7 +669,10 @@ impl OracleManager {
         }
 
         // --- Step 4: All methods failed ---
-        Err("No price available: oracle is down, fallback is disabled or stale, and no manual override is set")
+        Err(String::from_str(
+            &env,
+            "No price available: oracle is down, fallback is disabled or stale, and no manual override is set",
+        ))
     }
 
     // Update reliability tracking
@@ -666,7 +681,7 @@ impl OracleManager {
             .storage()
             .instance()
             .get(&ORACLE_RELIABILITY)
-            .unwrap_or_else(|| OracleReliability {
+            .unwrap_or(OracleReliability {
                 success_count: 0,
                 failure_count: 0,
                 last_success: 0,
@@ -685,9 +700,10 @@ impl OracleManager {
         // Update average response time
         let total_calls = reliability.success_count + reliability.failure_count;
         if total_calls > 1 {
+            let total_calls = total_calls as u64;
             reliability.average_response_time =
-                (reliability.average_response_time * u64::from(total_calls - 1) + response_time)
-                    / u64::from(total_calls);
+                (reliability.average_response_time * (total_calls - 1) + response_time)
+                    / total_calls;
         } else {
             reliability.average_response_time = response_time;
         }
@@ -703,7 +719,7 @@ impl OracleManager {
             .storage()
             .instance()
             .get(&ORACLE_RELIABILITY)
-            .unwrap_or_else(|| OracleReliability {
+            .unwrap_or(OracleReliability {
                 success_count: 0,
                 failure_count: 0,
                 last_success: 0,
@@ -735,22 +751,23 @@ impl OracleManager {
     }
 
     // Track oracle costs
-    pub fn track_oracle_cost(env: Env, cost: i128) -> Result<(), &'static str> {
+    #[allow(dead_code)]
+    pub fn track_oracle_cost(env: Env, cost: i128) -> Result<(), String> {
         let mut cost_tracker: OracleCost = env
             .storage()
             .instance()
             .get(&ORACLE_COSTS)
-            .ok_or("Cost tracking not initialized")?;
+            .ok_or(String::from_str(&env, "Cost tracking not initialized"))?;
 
         let config: OracleConfig = env
             .storage()
             .instance()
             .get(&ORACLE_CONFIG)
-            .ok_or("Oracle not initialized")?;
+            .ok_or(String::from_str(&env, "Oracle not initialized"))?;
 
         // Check if cost exceeds limit per call
         if cost > config.cost_limit_per_call {
-            return Err("Cost exceeds limit per call");
+            return Err(String::from_str(&env, "Cost exceeds limit per call"));
         }
 
         // Reset daily tracking if needed
@@ -763,7 +780,7 @@ impl OracleManager {
 
         // Check daily limit
         if cost_tracker.daily_spent + cost > cost_tracker.daily_limit {
-            return Err("Daily cost limit exceeded");
+            return Err(String::from_str(&env, "Daily cost limit exceeded"));
         }
 
         // Update cost tracking
@@ -782,16 +799,16 @@ impl OracleManager {
 
     // Check if update is needed
     pub fn should_update_price_feeds(env: Env) -> bool {
-        let schedule: UpdateSchedule = env
-            .storage()
-            .instance()
-            .get(&ORACLE_SCHEDULE)
-            .unwrap_or_else(|| UpdateSchedule {
-                price_feed_interval: 300,
-                utility_rate_interval: 3600,
-                last_price_update: 0,
-                last_utility_update: 0,
-            });
+        let schedule: UpdateSchedule =
+            env.storage()
+                .instance()
+                .get(&ORACLE_SCHEDULE)
+                .unwrap_or(UpdateSchedule {
+                    price_feed_interval: 300,
+                    utility_rate_interval: 3600,
+                    last_price_update: 0,
+                    last_utility_update: 0,
+                });
 
         let current_time = env.ledger().timestamp();
         current_time >= (schedule.last_price_update + schedule.price_feed_interval)
@@ -799,28 +816,29 @@ impl OracleManager {
 
     // Check if utility rates update is needed
     pub fn should_update_utility_rates(env: Env) -> bool {
-        let schedule: UpdateSchedule = env
-            .storage()
-            .instance()
-            .get(&ORACLE_SCHEDULE)
-            .unwrap_or_else(|| UpdateSchedule {
-                price_feed_interval: 300,
-                utility_rate_interval: 3600,
-                last_price_update: 0,
-                last_utility_update: 0,
-            });
+        let schedule: UpdateSchedule =
+            env.storage()
+                .instance()
+                .get(&ORACLE_SCHEDULE)
+                .unwrap_or(UpdateSchedule {
+                    price_feed_interval: 300,
+                    utility_rate_interval: 3600,
+                    last_price_update: 0,
+                    last_utility_update: 0,
+                });
 
         let current_time = env.ledger().timestamp();
         current_time >= (schedule.last_utility_update + schedule.utility_rate_interval)
     }
 
     // Update schedule timestamps
+    #[allow(dead_code)]
     pub fn mark_price_feeds_updated(env: Env) {
         let mut schedule: UpdateSchedule = env
             .storage()
             .instance()
             .get(&ORACLE_SCHEDULE)
-            .unwrap_or_else(|| UpdateSchedule {
+            .unwrap_or(UpdateSchedule {
                 price_feed_interval: 300,
                 utility_rate_interval: 3600,
                 last_price_update: 0,
@@ -831,12 +849,13 @@ impl OracleManager {
         env.storage().instance().set(&ORACLE_SCHEDULE, &schedule);
     }
 
+    #[allow(dead_code)]
     pub fn mark_utility_rates_updated(env: Env) {
         let mut schedule: UpdateSchedule = env
             .storage()
             .instance()
             .get(&ORACLE_SCHEDULE)
-            .unwrap_or_else(|| UpdateSchedule {
+            .unwrap_or(UpdateSchedule {
                 price_feed_interval: 300,
                 utility_rate_interval: 3600,
                 last_price_update: 0,
@@ -866,7 +885,7 @@ impl OracleManager {
             .storage()
             .instance()
             .get(&ORACLE_RELIABILITY)
-            .unwrap_or_else(|| OracleReliability {
+            .unwrap_or(OracleReliability {
                 success_count: 0,
                 failure_count: 0,
                 last_success: 0,

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { getCLS, getFID, getFCP, getLCP, getTTFB } from 'web-vitals';
 import { getPerformanceMonitoringService } from '../services/PerformanceMonitoring';
 
@@ -149,7 +149,7 @@ export const withPerformanceMonitoring = <P extends object>(
       };
     });
     
-    return <Component {...props} />;
+    return React.createElement(Component, props);
   };
   
   WrappedComponent.displayName = `withPerformanceMonitoring(${Component.displayName || Component.name})`;

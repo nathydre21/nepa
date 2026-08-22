@@ -1,16 +1,18 @@
-// TODO: Fix missing webhook-client Prisma client
-// import { PrismaClient as WebhookPrismaClient } from '../../node_modules/.prisma/webhook-client';
+import { PrismaClient as WebhookPrismaClient } from '../../node_modules/.prisma/webhook-client';
+import { buildOptimizedDatabaseUrl } from './urlOptimizer';
 
-// Temporarily disabled to get server running
-// const webhookClient = new WebhookPrismaClient({
-//   datasources: {
-//     db: {
-//       url: process.env.WEBHOOK_SERVICE_DATABASE_URL,
-//     },
-//   },
-// });
+const webhookClient = new WebhookPrismaClient({
+  datasources: {
+    db: {
+      url: buildOptimizedDatabaseUrl(process.env.WEBHOOK_SERVICE_DATABASE_URL || ''),
+    },
+  },
+  log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+});
 
-// Mock webhook client for now
-const webhookClient = null;
+// Graceful shutdown
+process.on('beforeExit', async () => {
+  await webhookClient.$disconnect();
+});
 
 export default webhookClient;

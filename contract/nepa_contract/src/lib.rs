@@ -9,9 +9,7 @@ use oracle::{OracleConfig, OracleManager, PriceFeed, UtilityRate};
 
 mod multi_utility;
 use multi_utility::{
-    DiscountRate, FeeType, LateFeeConfig, MultiUtilityManager, SeasonalAdjustment, TaxRate,
-    TierRate, TimeOfUseRate, UtilityConfig, UtilityConfigRequest, UtilityFee, UtilityMeter,
-    UtilityProvider, UtilityType,
+    MultiUtilityManager, UtilityConfig, UtilityFee, UtilityMeter, UtilityProvider,
 };
 
 mod upgrade_proxy;
@@ -55,43 +53,50 @@ fn join_strings(env: &Env, first: &String, separator: &str, second: &String) -> 
 pub struct NepaBillingContract;
 
 #[contracterror]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
 pub enum ContractError {
-    Failed = 1,
+    Invalid = 1,
+    Unauthorized = 2,
+    NotFound = 3,
+    Overflow = 4,
+    Limit = 5,
+    Unavailable = 6,
+    Unsafe = 7,
 }
 
 impl From<String> for ContractError {
     fn from(_: String) -> Self {
-        Self::Failed
+        Self::Invalid
     }
 }
 
 impl From<Symbol> for ContractError {
     fn from(_: Symbol) -> Self {
-        Self::Failed
+        Self::Invalid
     }
 }
 
 impl From<&'static str> for ContractError {
     fn from(_: &'static str) -> Self {
-        Self::Failed
+        Self::Invalid
     }
 }
 
 // SECURITY (Issue #414): Validate meter_id is non-empty and within length limits
-fn validate_meter_id(meter_id: &String) -> Result<(), &'static str> {
+fn validate_meter_id(meter_id: &String) -> Result<(), ContractError> {
     let len = meter_id.len();
     if len == 0 {
-        return Err("Meter ID cannot be empty");
+        return Err(ContractError::Invalid);
     }
     if len > MAX_METER_ID_LENGTH {
-        return Err("Meter ID exceeds maximum length");
+        return Err(ContractError::Limit);
     }
     Ok(())
 }
 
 // SECURITY (Issue #414): Validate currency against supported whitelist
-fn validate_currency(env: &Env, currency: &String) -> Result<(), &'static str> {
+fn validate_currency(env: &Env, currency: &String) -> Result<(), ContractError> {
     let usd = String::from_str(env, "USD");
     let ngn = String::from_str(env, "NGN");
     let eur = String::from_str(env, "EUR");
@@ -104,20 +109,20 @@ fn validate_currency(env: &Env, currency: &String) -> Result<(), &'static str> {
         && currency != &gbp
         && currency != &xlm
     {
-        return Err("Unsupported currency. Allowed: USD, NGN, EUR, GBP, XLM");
+        return Err(ContractError::Invalid);
     }
     Ok(())
 }
 
 // SECURITY (Issue #414): Re-entrancy guard using storage flag
-fn check_reentrancy(env: &Env) -> Result<(), &'static str> {
+fn check_reentrancy(env: &Env) -> Result<(), ContractError> {
     let locked: bool = env
         .storage()
         .instance()
         .get(&REENTRANCY_GUARD)
         .unwrap_or(false);
     if locked {
-        return Err("Re-entrant call detected");
+        return Err(ContractError::Invalid);
     }
     env.storage().instance().set(&REENTRANCY_GUARD, &true);
     Ok(())
@@ -128,19 +133,19 @@ fn clear_reentrancy(env: &Env) {
 }
 
 // SECURITY (Issue #414): Per-ledger rate limiting per meter
-fn check_rate_limit(env: &Env, meter_id: &String) -> Result<(), &'static str> {
+fn check_rate_limit(env: &Env, meter_id: &String) -> Result<(), ContractError> {
     let ledger_seq = env.ledger().sequence();
-    let rate_key = (symbol_short!("RATE_LIM"), ledger_seq, meter_id.clone());
+    let rate_key = (symbol_short!("RL"), ledger_seq, meter_id.clone());
     let count: u32 = env.storage().persistent().get(&rate_key).unwrap_or(0);
     if count >= RATE_LIMIT_PER_LEDGER {
-        return Err("Payment rate limit exceeded for this meter");
+        return Err(ContractError::Limit);
     }
     env.storage().persistent().set(&rate_key, &(count + 1));
     Ok(())
 }
 
 // SECURITY (Issue #414): Safe multiplication with overflow check
-fn checked_mul_div(a: i128, b: i128, divisor: i128) -> Result<i128, &'static str> {
+fn checked_mul_div(a: i128, b: i128, divisor: i128) -> Result<i128, ContractError> {
     let product = a
         .checked_mul(b)
         .ok_or("Integer overflow in price calculation")?;
@@ -148,16 +153,41 @@ fn checked_mul_div(a: i128, b: i128, divisor: i128) -> Result<i128, &'static str
 }
 
 // SECURITY (Issue #414): Validate payment amount ceiling
-fn validate_amount(amount: i128) -> Result<(), &'static str> {
+fn validate_amount(amount: i128) -> Result<(), ContractError> {
     if amount <= 0 {
-        return Err("Amount must be greater than 0");
+        return Err(ContractError::Invalid);
     }
     if amount > MAX_PAYMENT_AMOUNT {
-        return Err("Amount exceeds maximum payment limit");
+        return Err(ContractError::Limit);
     }
     Ok(())
 }
 
+fn join_strings(env: &Env, left: &String, right: &String) -> String {
+    let mut left_bytes = alloc::vec![0; left.len() as usize];
+    left.copy_into_slice(&mut left_bytes);
+    let mut right_bytes = alloc::vec![0; right.len() as usize];
+    right.copy_into_slice(&mut right_bytes);
+
+    let mut bytes = alloc::vec::Vec::with_capacity(left_bytes.len() + 1 + right_bytes.len());
+    bytes.extend_from_slice(&left_bytes);
+    bytes.push(b'_');
+    bytes.extend_from_slice(&right_bytes);
+    String::from_bytes(env, &bytes)
+}
+
+fn join_with_literal(env: &Env, left: &String, right: &str) -> String {
+    let mut left_bytes = alloc::vec![0; left.len() as usize];
+    left.copy_into_slice(&mut left_bytes);
+
+    let mut bytes = alloc::vec::Vec::with_capacity(left_bytes.len() + 1 + right.len());
+    bytes.extend_from_slice(&left_bytes);
+    bytes.push(b'_');
+    bytes.extend_from_slice(right.as_bytes());
+    String::from_bytes(env, &bytes)
+}
+
+#[allow(clippy::too_many_arguments)]
 #[contractimpl]
 impl NepaBillingContract {
     // Initialize the contract with oracle support
@@ -198,8 +228,7 @@ impl NepaBillingContract {
         let mut final_amount = amount;
         let mut used_fallback = false;
         if use_exchange_rate {
-            let usd = String::from_str(&env, "USD");
-            let exchange_rate_id = join_strings(&env, &currency, "_", &usd);
+            let exchange_rate_id = join_with_literal(&env, &currency, "USD");
 
             // SECURITY (Issue #411): Use the new get_price_with_fallback method
             let max_deviation = 20;
@@ -241,6 +270,7 @@ impl NepaBillingContract {
     }
 
     // Pay utility bill based on consumption and real-time rates
+    #[allow(clippy::too_many_arguments)]
     pub fn pay_utility_bill(
         env: Env,
         from: Address,
@@ -265,17 +295,17 @@ impl NepaBillingContract {
 
         // SECURITY (Issue #414): Validate consumption
         if kwh_consumed <= 0 {
-            return Err(ContractError::Failed);
+            return Err(ContractError::Invalid);
         }
         if kwh_consumed > 1_000_000_000_000 {
-            return Err(ContractError::Failed);
+            return Err(ContractError::Limit);
         }
 
         // SECURITY (Issue #414): Rate limiting
         check_rate_limit(&env, &meter_id)?;
 
         // 2. Get utility rate
-        let rate_id = join_strings(&env, &utility_type, "_", &region);
+        let rate_id = join_strings(&env, &utility_type, &region);
         let utility_rate = OracleManager::get_utility_rate(env.clone(), rate_id)
             .ok_or("Utility rate not available")?;
 
@@ -287,7 +317,7 @@ impl NepaBillingContract {
             .ok_or("Oracle not initialized")?;
 
         if utility_rate.reliability_score < config.min_reliability_score {
-            return Err(ContractError::Failed);
+            return Err(ContractError::Unavailable);
         }
 
         // 4. Calculate bill amount with overflow protection
@@ -300,7 +330,7 @@ impl NepaBillingContract {
         // 5. Apply currency conversion if needed
         let mut final_amount = subtotal;
         if utility_rate.currency != currency {
-            let exchange_rate_id = join_strings(&env, &utility_rate.currency, "_", &currency);
+            let exchange_rate_id = join_strings(&env, &utility_rate.currency, &currency);
 
             let max_deviation = 20;
             let (price, decimals, _fallback) = OracleManager::get_price_with_fallback(
@@ -321,7 +351,7 @@ impl NepaBillingContract {
 
         // 7. Update meter record with detailed information
         let billing_key = (
-            symbol_short!("BILLING"),
+            symbol_short!("BILL"),
             meter_id.clone(),
             env.ledger().timestamp(),
         );
@@ -402,7 +432,7 @@ impl NepaBillingContract {
         meter_id: String,
         timestamp: u64,
     ) -> Option<(i128, i128, i128, String)> {
-        let billing_key = (symbol_short!("BILLING"), meter_id, timestamp);
+        let billing_key = (symbol_short!("BILL"), meter_id, timestamp);
         env.storage().persistent().get(&billing_key)
     }
 
@@ -417,7 +447,8 @@ impl NepaBillingContract {
         new_price: i128,
         timestamp: u64,
     ) -> Result<(), ContractError> {
-        OracleManager::update_price_feed(env, feed_id, new_price, timestamp).map_err(Into::into)
+        OracleManager::update_price_feed(env, feed_id, new_price, timestamp)
+            .map_err(ContractError::from)
     }
 
     pub fn get_price_feed(env: Env, feed_id: String) -> Option<PriceFeed> {
@@ -434,7 +465,8 @@ impl NepaBillingContract {
         new_rate: i128,
         timestamp: u64,
     ) -> Result<(), ContractError> {
-        OracleManager::update_utility_rate(env, rate_id, new_rate, timestamp).map_err(Into::into)
+        OracleManager::update_utility_rate(env, rate_id, new_rate, timestamp)
+            .map_err(ContractError::from)
     }
 
     pub fn get_utility_rate(env: Env, rate_id: String) -> Option<UtilityRate> {
@@ -499,6 +531,7 @@ impl NepaBillingContract {
     }
 
     // Register utility provider
+    #[allow(clippy::too_many_arguments)]
     pub fn register_utility_provider(
         env: Env,
         admin: Address,
@@ -521,7 +554,7 @@ impl NepaBillingContract {
             license_number,
             contact_info,
         )
-        .map_err(Into::into)
+        .map_err(ContractError::from)
     }
 
     // Add utility configuration
@@ -529,27 +562,14 @@ impl NepaBillingContract {
         env: Env,
         admin: Address,
         config_id: String,
-        request: UtilityConfigRequest,
+        config: UtilityConfig,
     ) -> Result<(), ContractError> {
-        MultiUtilityManager::add_utility_config(
-            env,
-            admin,
-            config_id,
-            request.utility_type,
-            request.provider_id,
-            request.region,
-            request.base_rate,
-            request.currency,
-            request.decimals,
-            request.billing_cycle_days,
-            request.grace_period_days,
-            request.minimum_payment,
-            request.maximum_payment,
-        )
-        .map_err(Into::into)
+        MultiUtilityManager::add_utility_config(env, admin, config_id, config)
+            .map_err(ContractError::from)
     }
 
     // Register utility meter
+    #[allow(clippy::too_many_arguments)]
     pub fn register_utility_meter(
         env: Env,
         provider_address: Address,
@@ -574,10 +594,11 @@ impl NepaBillingContract {
             firmware_version,
             is_smart_meter,
         )
-        .map_err(Into::into)
+        .map_err(ContractError::from)
     }
 
     // Add utility fee
+    #[allow(clippy::too_many_arguments)]
     pub fn add_utility_fee_structure(
         env: Env,
         admin: Address,
@@ -602,7 +623,7 @@ impl NepaBillingContract {
             is_percentage,
             description,
         )
-        .map_err(Into::into)
+        .map_err(ContractError::from)
     }
 
     // Enhanced multi-utility payment function
@@ -629,10 +650,10 @@ impl NepaBillingContract {
 
         // SECURITY (Issue #414): Validate consumption
         if consumption <= 0 {
-            return Err(ContractError::Failed);
+            return Err(ContractError::Invalid);
         }
         if consumption > 1_000_000_000_000 {
-            return Err(ContractError::Failed);
+            return Err(ContractError::Limit);
         }
 
         // SECURITY (Issue #414): Rate limiting
@@ -643,16 +664,16 @@ impl NepaBillingContract {
             .ok_or("Meter not found")?;
 
         if !meter.is_active {
-            return Err(ContractError::Failed);
+            return Err(ContractError::Unavailable);
         }
 
         // 3. Get utility configuration
-        let config_id = join_strings(&env, &meter.provider_id, "_", &meter.region);
+        let config_id = join_strings(&env, &meter.provider_id, &meter.location);
         let config = MultiUtilityManager::get_utility_config(env.clone(), config_id)
             .ok_or("Utility configuration not found")?;
 
         if !config.is_active {
-            return Err(ContractError::Failed);
+            return Err(ContractError::Unavailable);
         }
 
         // 4. Calculate base amount with overflow protection
@@ -709,7 +730,7 @@ impl NepaBillingContract {
         // 10. Apply currency conversion if needed
         let mut final_amount = subtotal;
         if config.currency != currency {
-            let exchange_rate_id = join_strings(&env, &config.currency, "_", &currency);
+            let exchange_rate_id = join_strings(&env, &config.currency, &currency);
 
             let max_deviation = 20;
             let (price, decimals, _fallback) = OracleManager::get_price_with_fallback(
@@ -724,10 +745,10 @@ impl NepaBillingContract {
 
         // 11. Validate payment limits
         if final_amount < config.minimum_payment {
-            return Err(ContractError::Failed);
+            return Err(ContractError::Limit);
         }
         if final_amount > config.maximum_payment {
-            return Err(ContractError::Failed);
+            return Err(ContractError::Limit);
         }
 
         validate_amount(final_amount)?;
@@ -738,7 +759,7 @@ impl NepaBillingContract {
 
         // 13. Update meter record with detailed billing information
         let billing_key = (
-            symbol_short!("BILLING"),
+            symbol_short!("BILL"),
             meter_id.clone(),
             env.ledger().timestamp(),
         );
@@ -809,7 +830,7 @@ impl NepaBillingContract {
         region: String,
     ) -> Result<Vec<UtilityProvider>, ContractError> {
         MultiUtilityManager::list_providers_by_type_and_region(env, utility_type, region)
-            .map_err(Into::into)
+            .map_err(ContractError::from)
     }
 
     // Update provider status
@@ -820,7 +841,7 @@ impl NepaBillingContract {
         is_active: bool,
     ) -> Result<(), ContractError> {
         MultiUtilityManager::update_provider_status(env, admin, provider_id, is_active)
-            .map_err(Into::into)
+            .map_err(ContractError::from)
     }
 
     // Upgrade utility configuration
@@ -831,12 +852,12 @@ impl NepaBillingContract {
         new_config: UtilityConfig,
     ) -> Result<(), ContractError> {
         MultiUtilityManager::upgrade_utility_config(env, admin, config_id, new_config)
-            .map_err(Into::into)
+            .map_err(ContractError::from)
     }
 
     // Validate utility type
     pub fn validate_utility_type(env: Env, utility_type: u32) -> Result<(), ContractError> {
-        MultiUtilityManager::validate_utility_type(env, utility_type).map_err(Into::into)
+        MultiUtilityManager::validate_utility_type(env, utility_type).map_err(ContractError::from)
     }
 
     // Get all utility types
@@ -865,7 +886,7 @@ impl NepaBillingContract {
         let is_safe = VersionManager::is_upgrade_safe(env.clone(), current_version, new_version)?;
 
         if !is_safe {
-            return Err(ContractError::Failed);
+            return Err(ContractError::Unsafe);
         }
 
         // Backup data before upgrade
@@ -902,7 +923,7 @@ impl NepaBillingContract {
             migration_required,
             backward_compatible,
         )
-        .map_err(Into::into)
+        .map_err(ContractError::from)
     }
 
     // Get current contract version

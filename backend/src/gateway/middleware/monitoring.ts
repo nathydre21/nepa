@@ -1,1 +1,356 @@
-import { Request, Response, NextFunction } from 'express';\n\n// Monitoring interfaces\ninterface RequestMetrics {\n  method: string;\n  url: string;\n  userAgent: string;\n  ip: string;\n  timestamp: Date;\n  responseTime?: number;\n  statusCode?: number;\n  error?: string;\n  service?: string;\n}\n\ninterface ServiceMetrics {\n  serviceName: string;\n  requestCount: number;\n  averageResponseTime: number;\n  errorRate: number;\n  lastError?: Date;\n  uptime: number;\n}\n\n// In-memory metrics store (in production, use database or time-series DB)\nconst metrics = {\n  requests: [] as RequestMetrics[],\n  services: new Map<string, ServiceMetrics>(),\n  alerts: [] as {\n    type: string;\n    message: string;\n    timestamp: Date;\n    severity: 'low' | 'medium' | 'high' | 'critical';\n  }[],\n};\n\n// Alert thresholds\nconst thresholds = {\n  responseTime: {\n    warning: 2000, // 2 seconds\n    critical: 5000, // 5 seconds\n  },\n  errorRate: {\n    warning: 0.05, // 5%\n    critical: 0.10, // 10%\n  },\n  requestRate: {\n    warning: 100, // 100 requests per minute\n    critical: 200, // 200 requests per minute\n  },\n};\n\n// Generate unique request ID\nexport const generateRequestId = (): string => {\n  return `req_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;\n};\n\n// Calculate service metrics\nexport const calculateServiceMetrics = (serviceName: string): ServiceMetrics => {\n  const serviceRequests = metrics.requests.filter(req => req.service === serviceName);\n  const totalRequests = serviceRequests.length;\n  \n  if (totalRequests === 0) {\n    return {\n      serviceName,\n      requestCount: 0,\n      averageResponseTime: 0,\n      errorRate: 0,\n      uptime: 100,\n    };\n  }\n  \n  const successfulRequests = serviceRequests.filter(req => !req.error);\n  const responseTimes = serviceRequests\n    .filter(req => req.responseTime !== undefined)\n    .map(req => req.responseTime!);\n  \n  const averageResponseTime = responseTimes.length > 0 \n    ? responseTimes.reduce((sum, time) => sum + time, 0) / responseTimes.length\n    : 0;\n  \n  const errorCount = totalRequests - successfulRequests.length;\n  const errorRate = totalRequests > 0 ? errorCount / totalRequests : 0;\n  \n  return {\n    serviceName,\n    requestCount: totalRequests,\n    averageResponseTime,\n    errorRate,\n    uptime: 100 - (errorRate * 100),\n  };\n};\n\n// Check for alerts\nexport const checkAlerts = (serviceMetrics: ServiceMetrics) => {\n  const alerts = [];\n  \n  // Response time alerts\n  if (serviceMetrics.averageResponseTime > thresholds.responseTime.critical) {\n    alerts.push({\n      type: 'response_time',\n      message: `Service ${serviceMetrics.serviceName} response time is critically high: ${serviceMetrics.averageResponseTime}ms`,\n      timestamp: new Date(),\n      severity: 'critical',\n    });\n  } else if (serviceMetrics.averageResponseTime > thresholds.responseTime.warning) {\n    alerts.push({\n      type: 'response_time',\n      message: `Service ${serviceMetrics.serviceName} response time is elevated: ${serviceMetrics.averageResponseTime}ms`,\n      timestamp: new Date(),\n      severity: 'medium',\n    });\n  }\n  \n  // Error rate alerts\n  if (serviceMetrics.errorRate > thresholds.errorRate.critical) {\n    alerts.push({\n      type: 'error_rate',\n      message: `Service ${serviceMetrics.serviceName} error rate is critical: ${(serviceMetrics.errorRate * 100).toFixed(1)}%`,\n      timestamp: new Date(),\n      severity: 'critical',\n    });\n  } else if (serviceMetrics.errorRate > thresholds.errorRate.warning) {\n    alerts.push({\n      type: 'error_rate',\n      message: `Service ${serviceMetrics.serviceName} error rate is elevated: ${(serviceMetrics.errorRate * 100).toFixed(1)}%`,\n      timestamp: new Date(),\n      severity: 'medium',\n    });\n  }\n  \n  // Uptime alerts\n  if (serviceMetrics.uptime < 95) {\n    alerts.push({\n      type: 'uptime',\n      message: `Service ${serviceMetrics.serviceName} uptime is low: ${serviceMetrics.uptime.toFixed(1)}%`,\n      timestamp: new Date(),\n      severity: 'high',\n    });\n  }\n  \n  return alerts;\n};\n\n// Monitoring middleware\nexport const monitoringMiddleware = (req: Request, res: Response, next: NextFunction) => {\n  const startTime = Date.now();\n  const requestId = generateRequestId();\n  \n  // Add request ID to response headers\n  res.setHeader('X-Request-ID', requestId);\n  res.setHeader('X-Start-Time', startTime.toString());\n  \n  // Store request start time\n  const requestMetric: RequestMetrics = {\n    method: req.method,\n    url: req.originalUrl,\n    userAgent: req.headers['user-agent'] || 'Unknown',\n    ip: req.ip || req.connection.remoteAddress || 'Unknown',\n    timestamp: new Date(),\n  };\n  \n  // Override res.end to capture metrics\n  const originalEnd = res.end;\n  res.end = function(chunk?: any, encoding?: string) {\n    const endTime = Date.now();\n    const responseTime = endTime - startTime;\n    \n    // Update request metrics\n    requestMetric.responseTime = responseTime;\n    requestMetric.statusCode = res.statusCode;\n    requestMetric.service = req.headers['x-gateway-service'] || 'unknown';\n    \n    metrics.requests.push(requestMetric);\n    \n    // Keep only last 1000 requests in memory\n    if (metrics.requests.length > 1000) {\n      metrics.requests = metrics.requests.slice(-1000);\n    }\n    \n    // Log the request\n    console.log(JSON.stringify({\n      requestId,\n      method: requestMetric.method,\n      url: requestMetric.url,\n      ip: requestMetric.ip,\n      userAgent: requestMetric.userAgent,\n      service: requestMetric.service,\n      statusCode: requestMetric.statusCode,\n      responseTime,\n      timestamp: new Date().toISOString(),\n    }));\n    \n    // Call original end\n    return originalEnd.call(this, chunk, encoding);\n  };\n  \n  next();\n};\n\n// Get metrics for dashboard\nexport const getMetrics = () => {\n  const serviceMetrics = new Map<string, ServiceMetrics>();\n  \n  // Calculate metrics for each service\n  const services = ['user-service', 'payment-service', 'notification-service', 'analytics-service'];\n  services.forEach(service => {\n    serviceMetrics.set(service, calculateServiceMetrics(service));\n  });\n  \n  // Check for alerts\n  const allAlerts = [];\n  serviceMetrics.forEach((metrics, serviceName) => {\n    allAlerts.push(...checkAlerts(metrics));\n  });\n  \n  // Sort alerts by timestamp\n  allAlerts.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());\n  \n  return {\n    services: Array.from(serviceMetrics.entries()).map(([name, metrics]) => ({\n      serviceName: name,\n      ...metrics,\n    })),\n    alerts: allAlerts.slice(-50), // Last 50 alerts\n    totalRequests: metrics.requests.length,\n    uptime: process.uptime(),\n    memoryUsage: process.memoryUsage(),\n    cpuUsage: process.cpuUsage(),\n  };\n};\n\n// Get metrics for specific service\nexport const getServiceMetrics = (serviceName: string) => {\n  return calculateServiceMetrics(serviceName);\n};\n\n// Clear old metrics\nexport const clearMetrics = () => {\n  metrics.requests = [];\n  metrics.services.clear();\n  metrics.alerts = [];\n};\n\n// Health check for monitoring service\nexport const healthCheck = () => {\n  return {\n    status: 'healthy',\n    timestamp: new Date().toISOString(),\n    metrics: {\n      totalRequests: metrics.requests.length,\n      activeServices: metrics.services.size,\n      totalAlerts: metrics.alerts.length,\n      uptime: process.uptime(),\n    },\n  };\n};\n\n// Performance monitoring\nexport const getPerformanceMetrics = () => {\n  const memUsage = process.memoryUsage();\n  const cpuUsage = process.cpuUsage();\n  \n  return {\n    memory: {\n      used: memUsage.heapUsed,\n      total: memUsage.heapTotal,\n      external: memUsage.heapTotal - memUsage.heapUsed,\n      rss: memUsage.rss,\n      usagePercentage: ((memUsage.heapUsed / memUsage.heapTotal) * 100).toFixed(2),\n    },\n    cpu: {\n      user: cpuUsage.user,\n      system: cpuUsage.system,\n      idle: cpuUsage.idle,\n    },\n    loadAverage: require('os').loadavg(),\n    uptime: process.uptime(),\n  };\n};\n\n// Error tracking\nexport const trackError = (error: Error, req?: Request) => {\n  const errorMetric = {\n    type: 'error',\n    message: error.message,\n    stack: error.stack,\n    timestamp: new Date(),\n    requestId: req?.headers['x-request-id'],\n    url: req?.originalUrl,\n    method: req?.method,\n    userAgent: req?.headers['user-agent'],\n    ip: req?.ip || req?.connection?.remoteAddress,\n  };\n  \n  metrics.alerts.push({\n    type: 'error',\n    message: `Application error: ${error.message}`,\n    timestamp: new Date(),\n    severity: 'high',\n  });\n  \n  console.error('Application Error:', JSON.stringify(errorMetric));\n};\n\n// Request analytics\nexport const getRequestAnalytics = (timeRange: '1h' | '24h' | '7d' | '30d') => {\n  const now = new Date();\n  let startTime: Date;\n  \n  switch (timeRange) {\n    case '1h':\n      startTime = new Date(now.getTime() - (60 * 60 * 1000));\n      break;\n    case '24h':\n      startTime = new Date(now.getTime() - (24 * 60 * 60 * 1000));\n      break;\n    case '7d':\n      startTime = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));\n      break;\n    case '30d':\n      startTime = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));\n      break;\n  }\n  \n  const filteredRequests = metrics.requests.filter(req => \n    req.timestamp >= startTime && req.timestamp <= now\n  );\n  \n  const requestsPerMinute = filteredRequests.length / (timeRange === '1h' ? 60 : timeRange === '24h' ? 1440 : 10080);\n  \n  const statusCodes = filteredRequests.reduce((acc, req) => {\n    const code = req.statusCode || 0;\n    acc[code] = (acc[code] || 0) + 1;\n    return acc;\n  }, {} as Record<number, number>);\n  \n  return {\n    timeRange,\n    totalRequests: filteredRequests.length,\n    requestsPerMinute: Math.round(requestsPerMinute * 100) / 100,\n    statusCodes,\n    averageResponseTime: filteredRequests\n      .filter(req => req.responseTime !== undefined)\n      .reduce((sum, req) => sum + req.responseTime!, 0) / filteredRequests.length || 0,\n    topEndpoints: Object.entries(\n      filteredRequests.reduce((acc, req) => {\n        const key = `${req.method} ${req.url.split('?')[0]}`;\n        acc[key] = (acc[key] || 0) + 1;\n        return acc;\n      }, {} as Record<string, number>)\n    ).sort(([, a], [, b]) => b - a)\n      .slice(0, 10)\n      .map(([endpoint, count]) => ({ endpoint, count })),\n  };\n};
+import { Request, Response, NextFunction } from 'express';
+
+// Monitoring interfaces
+interface RequestMetrics {
+  method: string;
+  url: string;
+  userAgent: string;
+  ip: string;
+  timestamp: Date;
+  responseTime?: number;
+  statusCode?: number;
+  error?: string;
+  service?: string;
+}
+
+interface ServiceMetrics {
+  serviceName: string;
+  requestCount: number;
+  averageResponseTime: number;
+  errorRate: number;
+  lastError?: Date;
+  uptime: number;
+}
+
+// In-memory metrics store (in production, use database or time-series DB)
+const metrics = {
+  requests: [] as RequestMetrics[],
+  services: new Map<string, ServiceMetrics>(),
+  alerts: [] as {
+    type: string;
+    message: string;
+    timestamp: Date;
+    severity: 'low' | 'medium' | 'high' | 'critical';
+  }[],
+};
+
+// Alert thresholds
+const thresholds = {
+  responseTime: {
+    warning: 2000, // 2 seconds
+    critical: 5000, // 5 seconds
+  },
+  errorRate: {
+    warning: 0.05, // 5%
+    critical: 0.10, // 10%
+  },
+  requestRate: {
+    warning: 100, // 100 requests per minute
+    critical: 200, // 200 requests per minute
+  },
+};
+
+// Generate unique request ID
+export const generateRequestId = (): string => {
+  return `req_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+};
+
+// Calculate service metrics
+export const calculateServiceMetrics = (serviceName: string): ServiceMetrics => {
+  const serviceRequests = metrics.requests.filter(req => req.service === serviceName);
+  const totalRequests = serviceRequests.length;
+
+  if (totalRequests === 0) {
+    return {
+      serviceName,
+      requestCount: 0,
+      averageResponseTime: 0,
+      errorRate: 0,
+      uptime: 100,
+    };
+  }
+
+  const successfulRequests = serviceRequests.filter(req => !req.error);
+  const responseTimes = serviceRequests
+    .filter(req => req.responseTime !== undefined)
+    .map(req => req.responseTime!);
+
+  const averageResponseTime = responseTimes.length > 0
+    ? responseTimes.reduce((sum, time) => sum + time, 0) / responseTimes.length
+    : 0;
+
+  const errorCount = totalRequests - successfulRequests.length;
+  const errorRate = totalRequests > 0 ? errorCount / totalRequests : 0;
+
+  return {
+    serviceName,
+    requestCount: totalRequests,
+    averageResponseTime,
+    errorRate,
+    uptime: 100 - (errorRate * 100),
+  };
+};
+
+// Check for alerts
+export const checkAlerts = (serviceMetrics: ServiceMetrics) => {
+  const alerts = [];
+
+  // Response time alerts
+  if (serviceMetrics.averageResponseTime > thresholds.responseTime.critical) {
+    alerts.push({
+      type: 'response_time',
+      message: `Service ${serviceMetrics.serviceName} response time is critically high: ${serviceMetrics.averageResponseTime}ms`,
+      timestamp: new Date(),
+      severity: 'critical',
+    });
+  } else if (serviceMetrics.averageResponseTime > thresholds.responseTime.warning) {
+    alerts.push({
+      type: 'response_time',
+      message: `Service ${serviceMetrics.serviceName} response time is elevated: ${serviceMetrics.averageResponseTime}ms`,
+      timestamp: new Date(),
+      severity: 'medium',
+    });
+  }
+
+  // Error rate alerts
+  if (serviceMetrics.errorRate > thresholds.errorRate.critical) {
+    alerts.push({
+      type: 'error_rate',
+      message: `Service ${serviceMetrics.serviceName} error rate is critical: ${(serviceMetrics.errorRate * 100).toFixed(1)}%`,
+      timestamp: new Date(),
+      severity: 'critical',
+    });
+  } else if (serviceMetrics.errorRate > thresholds.errorRate.warning) {
+    alerts.push({
+      type: 'error_rate',
+      message: `Service ${serviceMetrics.serviceName} error rate is elevated: ${(serviceMetrics.errorRate * 100).toFixed(1)}%`,
+      timestamp: new Date(),
+      severity: 'medium',
+    });
+  }
+
+  // Uptime alerts
+  if (serviceMetrics.uptime < 95) {
+    alerts.push({
+      type: 'uptime',
+      message: `Service ${serviceMetrics.serviceName} uptime is low: ${serviceMetrics.uptime.toFixed(1)}%`,
+      timestamp: new Date(),
+      severity: 'high',
+    });
+  }
+
+  return alerts;
+};
+
+// Monitoring middleware
+export const monitoringMiddleware = (req: Request, res: Response, next: NextFunction) => {
+  const startTime = Date.now();
+  const requestId = generateRequestId();
+
+  // Add request ID to response headers
+  res.setHeader('X-Request-ID', requestId);
+  res.setHeader('X-Start-Time', startTime.toString());
+
+  // Store request start time
+  const requestMetric: RequestMetrics = {
+    method: req.method,
+    url: req.originalUrl,
+    userAgent: req.headers['user-agent'] || 'Unknown',
+    ip: req.ip || req.connection.remoteAddress || 'Unknown',
+    timestamp: new Date(),
+  };
+
+  // Override res.end to capture metrics
+  const originalEnd = res.end;
+  res.end = function(chunk?: any, encoding?: string) {
+    const endTime = Date.now();
+    const responseTime = endTime - startTime;
+
+    // Update request metrics
+    requestMetric.responseTime = responseTime;
+    requestMetric.statusCode = res.statusCode;
+    requestMetric.service = req.headers['x-gateway-service'] || 'unknown';
+
+    metrics.requests.push(requestMetric);
+
+    // Keep only last 1000 requests in memory
+    if (metrics.requests.length > 1000) {
+      metrics.requests = metrics.requests.slice(-1000);
+    }
+
+    // Log the request
+    console.log(JSON.stringify({
+      requestId,
+      method: requestMetric.method,
+      url: requestMetric.url,
+      ip: requestMetric.ip,
+      userAgent: requestMetric.userAgent,
+      service: requestMetric.service,
+      statusCode: requestMetric.statusCode,
+      responseTime,
+      timestamp: new Date().toISOString(),
+    }));
+
+    // Call original end
+    return originalEnd.call(this, chunk, encoding);
+  };
+
+  next();
+};
+
+// Get metrics for dashboard
+export const getMetrics = () => {
+  const serviceMetrics = new Map<string, ServiceMetrics>();
+
+  // Calculate metrics for each service
+  const services = ['user-service', 'payment-service', 'notification-service', 'analytics-service'];
+  services.forEach(service => {
+    serviceMetrics.set(service, calculateServiceMetrics(service));
+  });
+
+  // Check for alerts
+  const allAlerts = [];
+  serviceMetrics.forEach((metrics, serviceName) => {
+    allAlerts.push(...checkAlerts(metrics));
+  });
+
+  // Sort alerts by timestamp
+  allAlerts.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+
+  return {
+    services: Array.from(serviceMetrics.entries()).map(([name, metrics]) => ({
+      serviceName: name,
+      ...metrics,
+    })),
+    alerts: allAlerts.slice(-50), // Last 50 alerts
+    totalRequests: metrics.requests.length,
+    uptime: process.uptime(),
+    memoryUsage: process.memoryUsage(),
+    cpuUsage: process.cpuUsage(),
+  };
+};
+
+// Get metrics for specific service
+export const getServiceMetrics = (serviceName: string) => {
+  return calculateServiceMetrics(serviceName);
+};
+
+// Clear old metrics
+export const clearMetrics = () => {
+  metrics.requests = [];
+  metrics.services.clear();
+  metrics.alerts = [];
+};
+
+// Health check for monitoring service
+export const healthCheck = () => {
+  return {
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    metrics: {
+      totalRequests: metrics.requests.length,
+      activeServices: metrics.services.size,
+      totalAlerts: metrics.alerts.length,
+      uptime: process.uptime(),
+    },
+  };
+};
+
+// Performance monitoring
+export const getPerformanceMetrics = () => {
+  const memUsage = process.memoryUsage();
+  const cpuUsage = process.cpuUsage();
+
+  return {
+    memory: {
+      used: memUsage.heapUsed,
+      total: memUsage.heapTotal,
+      external: memUsage.heapTotal - memUsage.heapUsed,
+      rss: memUsage.rss,
+      usagePercentage: ((memUsage.heapUsed / memUsage.heapTotal) * 100).toFixed(2),
+    },
+    cpu: {
+      user: cpuUsage.user,
+      system: cpuUsage.system,
+      idle: cpuUsage.idle,
+    },
+    loadAverage: require('os').loadavg(),
+    uptime: process.uptime(),
+  };
+};
+
+// Error tracking
+export const trackError = (error: Error, req?: Request) => {
+  const errorMetric = {
+    type: 'error',
+    message: error.message,
+    stack: error.stack,
+    timestamp: new Date(),
+    requestId: req?.headers['x-request-id'],
+    url: req?.originalUrl,
+    method: req?.method,
+    userAgent: req?.headers['user-agent'],
+    ip: req?.ip || req?.connection?.remoteAddress,
+  };
+
+  metrics.alerts.push({
+    type: 'error',
+    message: `Application error: ${error.message}`,
+    timestamp: new Date(),
+    severity: 'high',
+  });
+
+  console.error('Application Error:', JSON.stringify(errorMetric));
+};
+
+// Request analytics
+export const getRequestAnalytics = (timeRange: '1h' | '24h' | '7d' | '30d') => {
+  const now = new Date();
+  let startTime: Date;
+
+  switch (timeRange) {
+    case '1h':
+      startTime = new Date(now.getTime() - (60 * 60 * 1000));
+      break;
+    case '24h':
+      startTime = new Date(now.getTime() - (24 * 60 * 60 * 1000));
+      break;
+    case '7d':
+      startTime = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));
+      break;
+    case '30d':
+      startTime = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
+      break;
+  }
+
+  const filteredRequests = metrics.requests.filter(req =>
+    req.timestamp >= startTime && req.timestamp <= now
+  );
+
+  const requestsPerMinute = filteredRequests.length / (timeRange === '1h' ? 60 : timeRange === '24h' ? 1440 : 10080);
+
+  const statusCodes = filteredRequests.reduce((acc, req) => {
+    const code = req.statusCode || 0;
+    acc[code] = (acc[code] || 0) + 1;
+    return acc;
+  }, {} as Record<number, number>);
+
+  return {
+    timeRange,
+    totalRequests: filteredRequests.length,
+    requestsPerMinute: Math.round(requestsPerMinute * 100) / 100,
+    statusCodes,
+    averageResponseTime: filteredRequests
+      .filter(req => req.responseTime !== undefined)
+      .reduce((sum, req) => sum + req.responseTime!, 0) / filteredRequests.length || 0,
+    topEndpoints: Object.entries(
+      filteredRequests.reduce((acc, req) => {
+        const key = `${req.method} ${req.url.split('?')[0]}`;
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>)
+    ).sort(([, a], [, b]) => b - a)
+      .slice(0, 10)
+      .map(([endpoint, count]) => ({ endpoint, count })),
+  };
+};

@@ -19,6 +19,9 @@ const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // Limit each IP to 100 requests per windowMs
+  store: new RedisStore({
+    sendCommand: (...args: string[]) => redis.call(...args),
+  }),
   message: {
     status: 429,
     error: 'Too many requests, please try again later.',
@@ -36,6 +39,9 @@ export const apiLimiter = rateLimit({
 export const paymentLimiter = rateLimit({
   windowMs: 5 * 60 * 1000, // 5 minutes
   max: 5, // Limit each IP to 5 payment requests per 5 minutes
+  store: new RedisStore({
+    sendCommand: (...args: string[]) => redis.call(...args),
+  }),
   message: {
     status: 429,
     error: 'Too many payment attempts. Please try again later.',
@@ -54,6 +60,9 @@ export const paymentLimiter = rateLimit({
 export const transactionLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 20, // Limit each IP to 20 transactions per hour
+  store: new RedisStore({
+    sendCommand: (...args: string[]) => redis.call(...args),
+  }),
   message: {
     status: 429,
     error: 'Transaction limit exceeded. Please try again later.',
@@ -71,6 +80,9 @@ export const transactionLimiter = rateLimit({
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 10, // Limit each IP to 10 auth attempts per 15 minutes
+  store: new RedisStore({
+    sendCommand: (...args: string[]) => redis.call(...args),
+  }),
   message: {
     status: 429,
     error: 'Too many authentication attempts. Please try again later.',
@@ -108,6 +120,9 @@ export const ipRestriction = (req: Request, res: Response, next: Function) => {
 // Progressive rate limiting based on user behavior
 export const progressiveLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
+  store: new RedisStore({
+    sendCommand: (...args: string[]) => redis.call(...args),
+  }),
   max: (req: Request) => {
     // Adjust limit based on user behavior
     if ((req as any).suspicious) {

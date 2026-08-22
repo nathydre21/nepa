@@ -1,6 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
+import RedisStore from 'rate-limit-redis';
+import Redis from 'ioredis';
 import { ApiResponse, ResponseBuilder, HttpStatus, ErrorCode } from '../interfaces/ApiResponse';
+
+const redisClient = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 
 /**
  * Rate Limiting Configuration
@@ -27,6 +31,10 @@ export class RateLimiting {
     return rateLimit({
       windowMs: config.windowMs,
       max: config.max,
+      store: new RedisStore({
+        sendCommand: (...args: string[]) => redisClient.call(...args),
+        prefix: 'rl:basic:'
+      }),
       message: {
         success: false,
         error: {
@@ -108,6 +116,10 @@ export class RateLimiting {
   }) {
     return rateLimit({
       windowMs: config.windowMs,
+      store: new RedisStore({
+        sendCommand: (...args: string[]) => redisClient.call(...args),
+        prefix: 'rl:prog:'
+      }),
       max: (req: Request) => {
         const user = (req as any).user;
         if (!user) {
@@ -156,6 +168,10 @@ export class RateLimiting {
   }) {
     return rateLimit({
       windowMs: config.windowMs,
+      store: new RedisStore({
+        sendCommand: (...args: string[]) => redisClient.call(...args),
+        prefix: 'rl:adapt:'
+      }),
       max: (req: Request) => {
         const systemLoad = RateLimiting.getSystemLoad();
         const threshold = config.loadThreshold || 0.8;
@@ -196,6 +212,10 @@ export class RateLimiting {
   }) {
     return rateLimit({
       windowMs: config.windowMs,
+      store: new RedisStore({
+        sendCommand: (...args: string[]) => redisClient.call(...args),
+        prefix: 'rl:tier:'
+      }),
       max: (req: Request) => {
         const user = (req as any).user;
         if (!user) {

@@ -1,11 +1,12 @@
-use soroban_sdk::{contracttype, Address, BytesN, Env, Map, Symbol, Vec};
+use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, Symbol, Vec};
 
+#[contracttype]
 #[derive(Clone)]
 #[contracttype]
 pub struct MigrationScript {
     pub from_version: u32,
     pub to_version: u32,
-    pub script_hash: BytesN<32>,
+    pub script_hash: soroban_sdk::BytesN<32>,
     pub description: Symbol,
 }
 
@@ -16,33 +17,34 @@ impl DataMigration {
     pub fn initialize(env: Env, admin: Address) {
         env.storage()
             .instance()
-            .set(&Symbol::short("ADMIN"), &admin);
+            .set(&symbol_short!("ADMIN"), &admin);
 
         // Initialize migration scripts registry
         let migration_scripts: Map<u32, Vec<MigrationScript>> = Map::new(&env);
         env.storage()
             .instance()
-            .set(&Symbol::short("MIGS"), &migration_scripts);
+            .set(&symbol_short!("MIGR"), &migration_scripts);
     }
 
     /// Register a migration script
+    #[allow(dead_code)]
     pub fn register_migration_script(
         env: Env,
         admin: Address,
         from_version: u32,
         to_version: u32,
-        script_hash: BytesN<32>,
+        script_hash: soroban_sdk::BytesN<32>,
         description: Symbol,
     ) -> Result<(), Symbol> {
         // Verify admin
         let current_admin = env
             .storage()
             .instance()
-            .get::<Symbol, Address>(&Symbol::short("ADMIN"))
+            .get::<Symbol, Address>(&symbol_short!("ADMIN"))
             .unwrap();
 
         if current_admin != admin {
-            return Err(Symbol::short("UNAUTH"));
+            return Err(symbol_short!("UNAUTH"));
         }
 
         // Create migration script
@@ -57,7 +59,7 @@ impl DataMigration {
         let mut migrations: Map<u32, Vec<MigrationScript>> = env
             .storage()
             .instance()
-            .get(&Symbol::short("MIGS"))
+            .get(&symbol_short!("MIGR"))
             .unwrap_or_else(|| Map::new(&env));
 
         let version_migrations = migrations.get(to_version).unwrap_or_else(|| Vec::new(&env));
@@ -70,15 +72,11 @@ impl DataMigration {
         // Store updated migrations
         env.storage()
             .instance()
-            .set(&Symbol::short("MIGS"), &migrations);
+            .set(&symbol_short!("MIGR"), &migrations);
 
         // Emit registration event
         env.events().publish(
-            (
-                Symbol::short("MIG_REG"),
-                from_version,
-                to_version,
-            ),
+            (symbol_short!("MIG_REG"), from_version, to_version),
             (script_hash, description),
         );
 
@@ -90,7 +88,7 @@ impl DataMigration {
         let migrations: Map<u32, Vec<MigrationScript>> = env
             .storage()
             .instance()
-            .get(&Symbol::short("MIGS"))
+            .get(&symbol_short!("MIGR"))
             .unwrap_or_else(|| Map::new(&env));
 
         migrations.get(to_version).unwrap_or_else(|| Vec::new(&env))
@@ -107,11 +105,11 @@ impl DataMigration {
         let current_admin = env
             .storage()
             .instance()
-            .get::<Symbol, Address>(&Symbol::short("ADMIN"))
+            .get::<Symbol, Address>(&symbol_short!("ADMIN"))
             .unwrap();
 
         if current_admin != admin {
-            return Err(Symbol::short("UNAUTH"));
+            return Err(symbol_short!("UNAUTH"));
         }
 
         // Get migration scripts
@@ -130,11 +128,7 @@ impl DataMigration {
 
                 // For now, we'll emit a migration event
                 env.events().publish(
-                    (
-                        Symbol::short("MIG_EXEC"),
-                        from_version,
-                        to_version,
-                    ),
+                    (symbol_short!("MIG_EXEC"), from_version, to_version),
                     (migration.script_hash, env.ledger().timestamp()),
                 );
 
@@ -143,7 +137,7 @@ impl DataMigration {
         }
 
         if !migration_found {
-            return Err(Symbol::short("NO_MIG"));
+            return Err(symbol_short!("MIG_NF"));
         }
 
         Ok(())
@@ -155,16 +149,16 @@ impl DataMigration {
         let current_admin = env
             .storage()
             .instance()
-            .get::<Symbol, Address>(&Symbol::short("ADMIN"))
+            .get::<Symbol, Address>(&symbol_short!("ADMIN"))
             .unwrap();
 
         if current_admin != admin {
-            return Err(Symbol::short("UNAUTH"));
+            return Err(symbol_short!("UNAUTH"));
         }
 
         // Create backup timestamp
         let backup_timestamp = env.ledger().timestamp();
-        let backup_id = Symbol::short("BACKUP");
+        let backup_id = symbol_short!("BACKUP");
 
         // In a real implementation, you would:
         // 1. Copy all persistent storage data
@@ -173,7 +167,7 @@ impl DataMigration {
 
         // For now, we'll emit a backup event
         env.events().publish(
-            (Symbol::short("DATA_BKUP"), backup_id.clone()),
+            (symbol_short!("D_BACKUP"), backup_id.clone()),
             backup_timestamp,
         );
 
@@ -181,16 +175,17 @@ impl DataMigration {
     }
 
     /// Restore data from backup
+    #[allow(dead_code)]
     pub fn restore_data(env: Env, admin: Address, backup_id: Symbol) -> Result<(), Symbol> {
         // Verify admin
         let current_admin = env
             .storage()
             .instance()
-            .get::<Symbol, Address>(&Symbol::short("ADMIN"))
+            .get::<Symbol, Address>(&symbol_short!("ADMIN"))
             .unwrap();
 
         if current_admin != admin {
-            return Err(Symbol::short("UNAUTH"));
+            return Err(symbol_short!("UNAUTH"));
         }
 
         // In a real implementation, you would:
@@ -200,7 +195,7 @@ impl DataMigration {
 
         // For now, we'll emit a restore event
         env.events().publish(
-            (Symbol::short("DATA_RST"), backup_id),
+            (symbol_short!("D_RESTORE"), backup_id),
             env.ledger().timestamp(),
         );
 
@@ -208,10 +203,11 @@ impl DataMigration {
     }
 
     /// Get admin
+    #[allow(dead_code)]
     pub fn get_admin(env: Env) -> Address {
         env.storage()
             .instance()
-            .get(&Symbol::short("ADMIN"))
+            .get(&symbol_short!("ADMIN"))
             .unwrap()
     }
 }
