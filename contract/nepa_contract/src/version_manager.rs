@@ -1,6 +1,7 @@
-use soroban_sdk::{contract, contractimpl, Address, Env, Symbol, Map};
+use soroban_sdk::{contracttype, Address, Env, Map, Symbol};
 
 #[derive(Clone)]
+#[contracttype]
 pub struct ContractVersion {
     pub version: u32,
     pub implementation_address: Address,
@@ -9,17 +10,15 @@ pub struct ContractVersion {
     pub backward_compatible: bool,
 }
 
-#[contract]
 pub struct VersionManager;
 
-#[contractimpl]
 impl VersionManager {
     /// Initialize version manager
     pub fn initialize(env: Env, admin: Address) {
         env.storage()
             .instance()
             .set(&Symbol::short("ADMIN"), &admin);
-        
+
         // Initialize version registry
         let version_registry: Map<u32, ContractVersion> = Map::new(&env);
         env.storage()
@@ -37,26 +36,28 @@ impl VersionManager {
         backward_compatible: bool,
     ) -> Result<(), Symbol> {
         // Verify admin
-        let current_admin = env.storage()
+        let current_admin = env
+            .storage()
             .instance()
             .get::<Symbol, Address>(&Symbol::short("ADMIN"))
             .unwrap();
-        
+
         if current_admin != admin {
-            return Err(Symbol::short("UNAUTHORIZED"));
+            return Err(Symbol::short("UNAUTH"));
         }
 
         // Create version info
         let version_info = ContractVersion {
             version,
-            implementation_address,
+            implementation_address: implementation_address.clone(),
             deployment_timestamp: env.ledger().timestamp(),
             migration_required,
             backward_compatible,
         };
 
         // Get existing versions
-        let mut versions: Map<u32, ContractVersion> = env.storage()
+        let mut versions: Map<u32, ContractVersion> = env
+            .storage()
             .instance()
             .get(&Symbol::short("VERSIONS"))
             .unwrap_or_else(|| Map::new(&env));
@@ -70,18 +71,22 @@ impl VersionManager {
             .set(&Symbol::short("VERSIONS"), &versions);
 
         // Emit registration event
-        env.events()
-            .publish(
-                (Symbol::short("VERSION_REGISTERED"), version),
-                (implementation_address, migration_required, backward_compatible),
-            );
+        env.events().publish(
+            (Symbol::short("VER_REG"), version),
+            (
+                implementation_address,
+                migration_required,
+                backward_compatible,
+            ),
+        );
 
         Ok(())
     }
 
     /// Get version info
     pub fn get_version_info(env: Env, version: u32) -> Option<ContractVersion> {
-        let versions: Map<u32, ContractVersion> = env.storage()
+        let versions: Map<u32, ContractVersion> = env
+            .storage()
             .instance()
             .get(&Symbol::short("VERSIONS"))
             .unwrap_or_else(|| Map::new(&env));
@@ -91,7 +96,8 @@ impl VersionManager {
 
     /// Get latest version
     pub fn get_latest_version(env: Env) -> Option<u32> {
-        let versions: Map<u32, ContractVersion> = env.storage()
+        let versions: Map<u32, ContractVersion> = env
+            .storage()
             .instance()
             .get(&Symbol::short("VERSIONS"))
             .unwrap_or_else(|| Map::new(&env));
@@ -113,16 +119,19 @@ impl VersionManager {
 
     /// Check if upgrade is safe
     pub fn is_upgrade_safe(env: Env, from_version: u32, to_version: u32) -> Result<bool, Symbol> {
-        let versions: Map<u32, ContractVersion> = env.storage()
+        let versions: Map<u32, ContractVersion> = env
+            .storage()
             .instance()
             .get(&Symbol::short("VERSIONS"))
             .unwrap_or_else(|| Map::new(&env));
 
-        let from_info = versions.get(from_version)
-            .ok_or(Symbol::short("FROM_VERSION_NOT_FOUND"))?;
-        
-        let to_info = versions.get(to_version)
-            .ok_or(Symbol::short("TO_VERSION_NOT_FOUND"))?;
+        let from_info = versions
+            .get(from_version)
+            .ok_or(Symbol::short("FROM_VER"))?;
+
+        let to_info = versions
+            .get(to_version)
+            .ok_or(Symbol::short("TO_VER"))?;
 
         // Check if target version is backward compatible
         if !to_info.backward_compatible && from_version < to_version {

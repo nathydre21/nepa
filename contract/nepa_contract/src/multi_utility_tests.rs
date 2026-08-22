@@ -8,31 +8,31 @@ fn test_utility_type_enum() {
     let env = Env::default();
     
     // Test utility type conversion
-    assert_eq!(UtilityType::from_u8(1).unwrap(), UtilityType::Electricity);
-    assert_eq!(UtilityType::from_u8(2).unwrap(), UtilityType::Water);
-    assert_eq!(UtilityType::from_u8(8).unwrap(), UtilityType::EVCharging);
+    assert_eq!(UtilityType::from_u32(1).unwrap(), UtilityType::Electricity);
+    assert_eq!(UtilityType::from_u32(2).unwrap(), UtilityType::Water);
+    assert_eq!(UtilityType::from_u32(8).unwrap(), UtilityType::EVCharging);
     
     // Test invalid utility type
-    assert!(UtilityType::from_u8(99).is_err());
+    assert!(UtilityType::from_u32(99).is_err());
     
     // Test utility type to string conversion
-    assert_eq!(UtilityType::Electricity.to_string(), String::from_str(&"electricity"));
-    assert_eq!(UtilityType::Water.to_string(), String::from_str(&"water"));
+    assert_eq!(UtilityType::Electricity.to_string(&env), String::from_str(&"electricity"));
+    assert_eq!(UtilityType::Water.to_string(&env), String::from_str(&"water"));
     
     // Test utility type units
-    assert_eq!(UtilityType::Electricity.get_unit(), String::from_str(&"kWh"));
-    assert_eq!(UtilityType::Water.get_unit(), String::from_str(&"m³"));
-    assert_eq!(UtilityType::Internet.get_unit(), String::from_str(&"Mbps"));
+    assert_eq!(UtilityType::Electricity.get_unit(&env), String::from_str(&"kWh"));
+    assert_eq!(UtilityType::Water.get_unit(&env), String::from_str(&"m³"));
+    assert_eq!(UtilityType::Internet.get_unit(&env), String::from_str(&"Mbps"));
 }
 
 #[test]
 fn test_fee_type_enum() {
     // Test fee type conversion
-    assert_eq!(FeeType::from_u8(1).unwrap(), FeeType::Processing);
-    assert_eq!(FeeType::from_u8(8).unwrap(), FeeType::Emergency);
+    assert_eq!(FeeType::from_u32(1).unwrap(), FeeType::Processing);
+    assert_eq!(FeeType::from_u32(8).unwrap(), FeeType::Emergency);
     
     // Test invalid fee type
-    assert!(FeeType::from_u8(99).is_err());
+    assert!(FeeType::from_u32(99).is_err());
 }
 
 #[test]
