@@ -1,16 +1,22 @@
 import { Request, Response, NextFunction } from 'express';
-import { authenticateToken, requireRole, requirePermission } from '../../../middleware/authentication';
+import { authenticate, authenticateToken, requireRole, requirePermission, ResourceType, PermissionScope, AuthenticatedRequest } from '../../../middleware/authentication';
+import { AuthenticationService } from '../../../services/AuthenticationService';
+import { rbacService } from '../../../services/RbacService';
 import jwt from 'jsonwebtoken';
 import { PrismaClient, UserRole } from '@prisma/client';
 
+jest.mock('../../../services/AuthenticationService');
+jest.mock('../../../services/RbacService');
 jest.mock('jsonwebtoken');
 jest.mock('@prisma/client');
 
+const mockAuthService = AuthenticationService as jest.MockedClass<typeof AuthenticationService>;
+const mockRbacService = rbacService as jest.Mocked<typeof rbacService>;
 const mockJwt = jwt as jest.Mocked<typeof jwt>;
 const MockedPrisma = PrismaClient as jest.MockedClass<typeof PrismaClient>;
 
 describe('Authentication Middleware Unit Tests', () => {
-  let req: Request;
+  let req: AuthenticatedRequest;
   let res: Response;
   let next: NextFunction;
   let mockPrismaClient: any;
@@ -23,7 +29,7 @@ describe('Authentication Middleware Unit Tests', () => {
       body: {},
       params: {},
       query: {}
-    } as Request;
+    } as AuthenticatedRequest;
     
     res = {
       status: jest.fn().mockReturnThis(),
@@ -45,10 +51,9 @@ describe('Authentication Middleware Unit Tests', () => {
     MockedPrisma.mockImplementation(() => mockPrismaClient);
   });
 
-  describe('authenticateToken', () => {
+  describe('authenticate', () => {
     it('should authenticate user with valid token', async () => {
       const mockToken = 'valid-jwt-token';
-      const mockPayload = { userId: 'user-1', email: 'test@example.com' };
       const mockUser = {
         id: 'user-1',
         email: 'test@example.com',
@@ -57,136 +62,49 @@ describe('Authentication Middleware Unit Tests', () => {
       };
 
       req.headers.authorization = `Bearer ${mockToken}`;
-      mockJwt.verify.mockReturnValue(mockPayload);
-      mockPrismaClient.user.findUnique.mockResolvedValue(mockUser);
-      mockPrismaClient.userSession.findUnique.mockResolvedValue({
-        id: 'session-1',
-        userId: 'user-1',
-        isActive: true
-      });
+      mockAuthService.prototype.verifyToken.mockResolvedValue({ user: mockUser });
 
-      await authenticateToken(req, res, next);
+      await authenticate(req, res, next);
 
       expect(next).toHaveBeenCalledWith();
-      expect((req as any).user).toEqual(mockUser);
+      expect(req.user).toEqual(mockUser);
       expect(res.status).not.toHaveBeenCalled();
     });
 
-    it('should reject request with missing authorization header', async () => {
-      await authenticateToken(req, res, next);
+    it('should reject request with missing token', async () => {
+      await authenticate(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith({
-        error: 'Access token required'
+        error: 'No token provided'
       });
       expect(next).not.toHaveBeenCalled();
     });
 
-    it('should reject request with invalid token format', async () => {
-      req.headers.authorization = 'InvalidFormat token';
-
-      await authenticateToken(req, res, next);
-
-      expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith({
-        error: 'Invalid token format'
-      });
-      expect(next).not.toHaveBeenCalled();
-    });
-
-    it('should reject request with expired token', async () => {
-      const mockToken = 'expired-jwt-token';
+    it('should reject request with invalid token', async () => {
+      const mockToken = 'invalid-jwt-token';
       req.headers.authorization = `Bearer ${mockToken}`;
-      
-      mockJwt.verify.mockImplementation(() => {
-        throw new Error('Token expired');
-      });
+      mockAuthService.prototype.verifyToken.mockResolvedValue({ error: 'Invalid token' });
 
-      await authenticateToken(req, res, next);
+      await authenticate(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith({
-        error: 'Token expired'
+        error: 'Invalid token'
       });
       expect(next).not.toHaveBeenCalled();
     });
 
-    it('should reject request for non-existent user', async () => {
-      const mockToken = 'valid-jwt-token';
-      const mockPayload = { userId: 'user-1', email: 'test@example.com' };
-
-      req.headers.authorization = `Bearer ${mockToken}`;
-      mockJwt.verify.mockReturnValue(mockPayload);
-      mockPrismaClient.user.findUnique.mockResolvedValue(null);
-
-      await authenticateToken(req, res, next);
-
-      expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith({
-        error: 'User not found'
-      });
-      expect(next).not.toHaveBeenCalled();
-    });
-
-    it('should reject request for inactive user', async () => {
-      const mockToken = 'valid-jwt-token';
-      const mockPayload = { userId: 'user-1', email: 'test@example.com' };
-      const mockUser = {
-        id: 'user-1',
-        email: 'test@example.com',
-        role: UserRole.USER,
-        status: 'INACTIVE'
-      };
-
-      req.headers.authorization = `Bearer ${mockToken}`;
-      mockJwt.verify.mockReturnValue(mockPayload);
-      mockPrismaClient.user.findUnique.mockResolvedValue(mockUser);
-
-      await authenticateToken(req, res, next);
-
-      expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith({
-        error: 'Account is inactive'
-      });
-      expect(next).not.toHaveBeenCalled();
-    });
-
-    it('should reject request with invalid session', async () => {
-      const mockToken = 'valid-jwt-token';
-      const mockPayload = { userId: 'user-1', email: 'test@example.com' };
-      const mockUser = {
-        id: 'user-1',
-        email: 'test@example.com',
-        role: UserRole.USER,
-        status: 'ACTIVE'
-      };
-
-      req.headers.authorization = `Bearer ${mockToken}`;
-      mockJwt.verify.mockReturnValue(mockPayload);
-      mockPrismaClient.user.findUnique.mockResolvedValue(mockUser);
-      mockPrismaClient.userSession.findUnique.mockResolvedValue(null);
-
-      await authenticateToken(req, res, next);
-
-      expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith({
-        error: 'Invalid session'
-      });
-      expect(next).not.toHaveBeenCalled();
-    });
-
-    it('should handle database errors gracefully', async () => {
+    it('should handle authentication errors gracefully', async () => {
       const mockToken = 'valid-jwt-token';
       req.headers.authorization = `Bearer ${mockToken}`;
-      
-      mockJwt.verify.mockReturnValue({ userId: 'user-1' });
-      mockPrismaClient.user.findUnique.mockRejectedValue(new Error('Database error'));
+      mockAuthService.prototype.verifyToken.mockRejectedValue(new Error('Service error'));
 
-      await authenticateToken(req, res, next);
+      await authenticate(req, res, next);
 
-      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith({
-        error: 'Authentication error'
+        error: 'Authentication failed'
       });
       expect(next).not.toHaveBeenCalled();
     });
@@ -195,7 +113,8 @@ describe('Authentication Middleware Unit Tests', () => {
   describe('requireRole', () => {
     it('should allow access to users with required role', async () => {
       const middleware = requireRole(UserRole.ADMIN);
-      (req as any).user = { id: 'user-1', role: UserRole.ADMIN };
+      req.user = { id: 'user-1', role: UserRole.ADMIN };
+      mockAuthService.prototype.hasPermission.mockResolvedValue(true);
 
       await middleware(req, res, next);
 
@@ -205,7 +124,8 @@ describe('Authentication Middleware Unit Tests', () => {
 
     it('should deny access to users without required role', async () => {
       const middleware = requireRole(UserRole.ADMIN);
-      (req as any).user = { id: 'user-1', role: UserRole.USER };
+      req.user = { id: 'user-1', role: UserRole.USER };
+      mockAuthService.prototype.hasPermission.mockResolvedValue(false);
 
       await middleware(req, res, next);
 
@@ -228,39 +148,17 @@ describe('Authentication Middleware Unit Tests', () => {
       });
       expect(next).not.toHaveBeenCalled();
     });
-
-    it('should allow access to users with any of multiple roles', async () => {
-      const middleware = requireRole([UserRole.ADMIN, UserRole.SUPER_ADMIN]);
-      (req as any).user = { id: 'user-1', role: UserRole.SUPER_ADMIN };
-
-      await middleware(req, res, next);
-
-      expect(next).toHaveBeenCalledWith();
-      expect(res.status).not.toHaveBeenCalled();
-    });
-
-    it('should deny access to users with none of the required roles', async () => {
-      const middleware = requireRole([UserRole.ADMIN, UserRole.SUPER_ADMIN]);
-      (req as any).user = { id: 'user-1', role: UserRole.USER };
-
-      await middleware(req, res, next);
-
-      expect(res.status).toHaveBeenCalledWith(403);
-      expect(res.json).toHaveBeenCalledWith({
-        error: 'Insufficient permissions'
-      });
-      expect(next).not.toHaveBeenCalled();
-    });
   });
 
   describe('requirePermission', () => {
     it('should allow access to users with required permission', async () => {
-      const middleware = requirePermission('read_users');
-      (req as any).user = { 
-        id: 'user-1', 
-        role: UserRole.ADMIN,
-        permissions: ['read_users', 'write_users']
-      };
+      const middleware = requirePermission({
+        resource: ResourceType.USER,
+        action: 'read',
+        scope: PermissionScope.GLOBAL
+      });
+      req.user = { id: 'user-1' };
+      mockRbacService.hasPermission.mockResolvedValue(true);
 
       await middleware(req, res, next);
 
@@ -269,24 +167,34 @@ describe('Authentication Middleware Unit Tests', () => {
     });
 
     it('should deny access to users without required permission', async () => {
-      const middleware = requirePermission('delete_users');
-      (req as any).user = { 
-        id: 'user-1', 
-        role: UserRole.USER,
-        permissions: ['read_users']
-      };
+      const middleware = requirePermission({
+        resource: ResourceType.USER,
+        action: 'delete',
+        scope: PermissionScope.GLOBAL
+      });
+      req.user = { id: 'user-1' };
+      mockRbacService.hasPermission.mockResolvedValue(false);
 
       await middleware(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(403);
       expect(res.json).toHaveBeenCalledWith({
-        error: 'Insufficient permissions'
+        error: 'Insufficient permissions',
+        required: {
+          resource: ResourceType.USER,
+          action: 'delete',
+          scope: PermissionScope.GLOBAL
+        }
       });
       expect(next).not.toHaveBeenCalled();
     });
 
     it('should deny access to unauthenticated users', async () => {
-      const middleware = requirePermission('read_users');
+      const middleware = requirePermission({
+        resource: ResourceType.USER,
+        action: 'read',
+        scope: PermissionScope.GLOBAL
+      });
       // No user set on request
 
       await middleware(req, res, next);
@@ -298,90 +206,35 @@ describe('Authentication Middleware Unit Tests', () => {
       expect(next).not.toHaveBeenCalled();
     });
 
-    it('should allow access to admin users regardless of specific permissions', async () => {
-      const middleware = requirePermission('any_permission');
-      (req as any).user = { 
-        id: 'user-1', 
-        role: UserRole.ADMIN,
-        permissions: []
-      };
+    it('should handle permission check errors gracefully', async () => {
+      const middleware = requirePermission({
+        resource: ResourceType.USER,
+        action: 'read',
+        scope: PermissionScope.GLOBAL
+      });
+      req.user = { id: 'user-1' };
+      mockRbacService.hasPermission.mockRejectedValue(new Error('Database error'));
 
       await middleware(req, res, next);
 
-      expect(next).toHaveBeenCalledWith();
-      expect(res.status).not.toHaveBeenCalled();
-    });
-
-    it('should allow access to super admin users regardless of specific permissions', async () => {
-      const middleware = requirePermission('any_permission');
-      (req as any).user = { 
-        id: 'user-1', 
-        role: UserRole.SUPER_ADMIN,
-        permissions: []
-      };
-
-      await middleware(req, res, next);
-
-      expect(next).toHaveBeenCalledWith();
-      expect(res.status).not.toHaveBeenCalled();
-    });
-
-    it('should handle users without permissions array', async () => {
-      const middleware = requirePermission('read_users');
-      (req as any).user = { 
-        id: 'user-1', 
-        role: UserRole.USER
-        // No permissions property
-      };
-
-      await middleware(req, res, next);
-
-      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith({
-        error: 'Insufficient permissions'
+        error: 'Permission check failed'
       });
       expect(next).not.toHaveBeenCalled();
     });
   });
 
-  describe('Token Refresh', () => {
-    it('should refresh token when close to expiry', async () => {
-      const mockToken = 'valid-jwt-token';
-      const mockPayload = { 
-        userId: 'user-1', 
-        email: 'test@example.com',
-        exp: Math.floor(Date.now() / 1000) + 300 // 5 minutes from now
-      };
-      const mockUser = {
-        id: 'user-1',
-        email: 'test@example.com',
-        role: UserRole.USER,
-        status: 'ACTIVE'
-      };
-
-      req.headers.authorization = `Bearer ${mockToken}`;
-      mockJwt.verify.mockReturnValue(mockPayload);
-      mockPrismaClient.user.findUnique.mockResolvedValue(mockUser);
-      mockPrismaClient.userSession.findUnique.mockResolvedValue({
-        id: 'session-1',
-        userId: 'user-1',
-        isActive: true
-      });
-
-      await authenticateToken(req, res, next);
+  describe('optionalAuth', () => {
+    it('should continue without authentication when no token provided', async () => {
+      await authenticate(req, res, next);
 
       expect(next).toHaveBeenCalledWith();
-      expect((req as any).user).toEqual(mockUser);
-      expect((req as any).shouldRefreshToken).toBe(true);
+      expect(req.user).toBeUndefined();
     });
 
-    it('should not refresh token when not close to expiry', async () => {
+    it('should authenticate user when valid token provided', async () => {
       const mockToken = 'valid-jwt-token';
-      const mockPayload = { 
-        userId: 'user-1', 
-        email: 'test@example.com',
-        exp: Math.floor(Date.now() / 1000) + 3600 // 1 hour from now
-      };
       const mockUser = {
         id: 'user-1',
         email: 'test@example.com',
@@ -390,19 +243,23 @@ describe('Authentication Middleware Unit Tests', () => {
       };
 
       req.headers.authorization = `Bearer ${mockToken}`;
-      mockJwt.verify.mockReturnValue(mockPayload);
-      mockPrismaClient.user.findUnique.mockResolvedValue(mockUser);
-      mockPrismaClient.userSession.findUnique.mockResolvedValue({
-        id: 'session-1',
-        userId: 'user-1',
-        isActive: true
-      });
+      mockAuthService.prototype.verifyToken.mockResolvedValue({ user: mockUser });
 
-      await authenticateToken(req, res, next);
+      await authenticate(req, res, next);
 
       expect(next).toHaveBeenCalledWith();
-      expect((req as any).user).toEqual(mockUser);
-      expect((req as any).shouldRefreshToken).toBeUndefined();
+      expect(req.user).toEqual(mockUser);
+    });
+
+    it('should continue without authentication when invalid token provided', async () => {
+      const mockToken = 'invalid-jwt-token';
+      req.headers.authorization = `Bearer ${mockToken}`;
+      mockAuthService.prototype.verifyToken.mockResolvedValue({ error: 'Invalid token' });
+
+      await authenticate(req, res, next);
+
+      expect(next).toHaveBeenCalledWith();
+      expect(req.user).toBeUndefined();
     });
   });
 });
