@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -66,6 +67,16 @@ jobs:
           path: backend/coverage/
           retention-days: 14
 
+      - name: Upload backend coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@v4
+        continue-on-error: true
+        with:
+          files: backend/coverage/lcov.info
+          flags: backend
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
   # ---------------------------------------------------------------
   # Frontend — lint, type-check, test, build
   # ---------------------------------------------------------------
@@ -109,6 +120,16 @@ jobs:
           name: frontend-coverage
           path: frontend/coverage/
           retention-days: 14
+
+      - name: Upload frontend coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@v4
+        continue-on-error: true
+        with:
+          files: frontend/coverage/lcov.info
+          flags: frontend
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
   # ---------------------------------------------------------------
   # Contract — Rust/Soroban build, test, clippy, format
