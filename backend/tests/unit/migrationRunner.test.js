@@ -5,6 +5,7 @@ const {
   resolveRollbackPath,
   parseServiceMigrationFile,
   listServiceMigrationFiles,
+  UPDATED_AT_TRIGGER_FUNCTION_SQL,
 } = require('../../migrations/migration_runner');
 
 describe('migration_runner helpers', () => {
@@ -59,5 +60,10 @@ describe('migration_runner helpers', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'migration-runner-empty-'));
     expect(listServiceMigrationFiles(tempDir)).toEqual([]);
     fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('includes shared updated_at trigger function SQL for isolated service databases', () => {
+    expect(UPDATED_AT_TRIGGER_FUNCTION_SQL).toContain('CREATE OR REPLACE FUNCTION update_updated_at_column()');
+    expect(UPDATED_AT_TRIGGER_FUNCTION_SQL).toContain('NEW.updated_at = CURRENT_TIMESTAMP');
   });
 });

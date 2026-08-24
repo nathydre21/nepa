@@ -106,6 +106,20 @@ function listServiceMigrationFiles(migrationsPath) {
     .sort();
 }
 
+const UPDATED_AT_TRIGGER_FUNCTION_SQL = `
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+`;
+
+async function ensureUpdatedAtTriggerFunction(client) {
+  await client.query(UPDATED_AT_TRIGGER_FUNCTION_SQL);
+}
+
 class MigrationRunner {
   constructor() {
     this.migrationsPath = path.join(__dirname);
@@ -161,6 +175,7 @@ class MigrationRunner {
       const migrationSQL = fs.readFileSync(migrationPath, 'utf8');
       
       await client.query('BEGIN');
+      await ensureUpdatedAtTriggerFunction(client);
       await client.query(migrationSQL);
       await client.query(
         'INSERT INTO migrations (filename) VALUES ($1)',
@@ -378,4 +393,6 @@ module.exports = {
   resolveRollbackPath,
   parseServiceMigrationFile,
   listServiceMigrationFiles,
+  UPDATED_AT_TRIGGER_FUNCTION_SQL,
+  ensureUpdatedAtTriggerFunction,
 };
