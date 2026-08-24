@@ -26,6 +26,8 @@ model User {
   bills       Bill[]
   payments    Payment[]
   sessions    UserSession[]
+  notifications Notification[]
+  notificationPreference NotificationPreference?
   
   @@map("users")
 }
@@ -138,4 +140,49 @@ enum PaymentMethod {
   STELLAR
   CREDIT_CARD
   BANK_TRANSFER
+}
+
+// In-app notifications persisted for offline delivery
+model Notification {
+  id          String    @id @default(cuid())
+  userId      String
+  type        String
+  title       String
+  message     String
+  data        Json      @default("{}")
+  priority    String    @default("MEDIUM")
+  category    String?
+  actionUrl   String?
+  actionText  String?
+  isRead      Boolean   @default(false)
+  readAt      DateTime?
+  expiresAt   DateTime?
+  sound       String?
+  icon        String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+model NotificationPreference {
+  userId               String   @id
+  email                Boolean  @default(true)
+  sms                  Boolean  @default(false)
+  push                 Boolean  @default(true)
+  inApp                Boolean  @default(true)
+  soundEnabled         Boolean  @default(true)
+  desktopNotifications Boolean  @default(true)
+  quietHours           Json?
+  categories           Json?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
 }
