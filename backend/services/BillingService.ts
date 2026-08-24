@@ -150,7 +150,7 @@ export class BillingService {
         status: 'SUCCESS',
         billId: paymentData.billId,
         userId: paymentData.userId,
-        transactionId: `txn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+        transactionId: paymentData.transactionId || `txn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
       }
     });
 
@@ -161,5 +161,11 @@ export class BillingService {
     });
 
     return payment;
+  }
+
+  async getPaymentByTransactionId(transactionId: string) {
+    return prisma.payment.findUnique({
+      where: { transactionId }
+    });
   }
 }

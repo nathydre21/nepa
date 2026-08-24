@@ -506,13 +506,23 @@ export class AuthenticationController extends BaseController {
       return res.error(
         ErrorCode.INVALID_INPUT,
         result.error || 'Failed to reset password',
+        HttpStatus.BAD_REQUEST
+      );
+    }
+
+    res.success({
+      message: 'Password reset successfully. Please log in with your new password.'
+    });
+  });
+
+  /**
    * Get token status and expiration information
    * GET /api/v1/auth/token-status
    */
   getTokenStatus = this.asyncHandler(async (req: Request, res: Response) => {
     // Get token from authorization header
     const authHeader = req.headers.authorization;
-    const token = authHeader?.replace('Bearer ', '') || authHeader?.replace('Bearer ', '');
+    const token = authHeader?.replace(/^Bearer\s+/i, '');
 
     if (!token) {
       return res.error(
@@ -522,9 +532,40 @@ export class AuthenticationController extends BaseController {
       );
     }
 
-    res.success({
-      message: 'Password has been reset successfully. Please login with your new password.'
-    });
+    const status = await this.authService.getTokenStatus(token);
+
+    if (!status.valid) {
+      return res.error(
+        ErrorCode.TOKEN_INVALID,
+        status.error || 'Token is invalid or expired',
+        status.warningLevel === 'expired' ? HttpStatus.UNAUTHORIZED : HttpStatus.BAD_REQUEST,
+        {
+          valid: status.valid,
+          warningLevel: status.warningLevel,
+          expiresAt: status.expiresAt
+        }
+      );
+    }
+
+    const response: any = {
+      valid: status.valid,
+      expiresAt: status.expiresAt,
+      timeUntilExpiry: status.timeUntilExpiry,
+      warningLevel: status.warningLevel
+    };
+
+    if (status.warningLevel === 'critical') {
+      response.message = 'Your session will expire in less than 1 minute. Please save your work.';
+      response.actionRequired = true;
+    } else if (status.warningLevel === 'warning') {
+      response.message = 'Your session will expire in less than 5 minutes.';
+      response.actionRequired = false;
+    } else {
+      response.message = 'Session is active';
+      response.actionRequired = false;
+    }
+
+    res.success(response);
   });
 
   /**
@@ -536,9 +577,8 @@ export class AuthenticationController extends BaseController {
       token: Joi.string().required()
     }));
 
-    // Verify token
     const result = await this.authService.verifyResetToken(token);
-    
+
     if (!result.success) {
       return res.error(
         ErrorCode.INTERNAL_ERROR,
@@ -559,42 +599,5 @@ export class AuthenticationController extends BaseController {
       valid: true,
       email: result.email
     });
-    // Get token status
-    const status = await this.authService.getTokenStatus(token);
-    
-    if (!status.valid) {
-      return res.error(
-        ErrorCode.TOKEN_INVALID,
-        status.error || 'Token is invalid or expired',
-        status.warningLevel === 'expired' ? HttpStatus.UNAUTHORIZED : HttpStatus.BAD_REQUEST,
-        {
-          valid: status.valid,
-          warningLevel: status.warningLevel,
-          expiresAt: status.expiresAt
-        }
-      );
-    }
-
-    // Return token status with appropriate warning level
-    const response: any = {
-      valid: status.valid,
-      expiresAt: status.expiresAt,
-      timeUntilExpiry: status.timeUntilExpiry,
-      warningLevel: status.warningLevel
-    };
-
-    // Add appropriate message based on warning level
-    if (status.warningLevel === 'critical') {
-      response.message = 'Your session will expire in less than 1 minute. Please save your work.';
-      response.actionRequired = true;
-    } else if (status.warningLevel === 'warning') {
-      response.message = 'Your session will expire in less than 5 minutes.';
-      response.actionRequired = false;
-    } else {
-      response.message = 'Session is active';
-      response.actionRequired = false;
-    }
-
-    res.success(response);
   });
 }

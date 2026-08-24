@@ -69,7 +69,7 @@ export class SessionCacheService {
       logger.debug(`Cached session for user ${session.userId}`);
       return result;
     } catch (error) {
-      logger.error('Session cache error:', error);
+      logger.error('Session cache error:', error as any);
       return false;
     }
   }
@@ -81,7 +81,7 @@ export class SessionCacheService {
     return await this.cacheStrategy.get<CachedSession>(
       'user:session',
       { sessionId },
-      null // No fallback - sessions should be explicitly cached
+      null as any // No fallback - sessions should be explicitly cached
     );
   }
 
@@ -92,7 +92,7 @@ export class SessionCacheService {
     return await this.cacheStrategy.get<CachedSession>(
       'user:session',
       { sessionId: `token:${token}` },
-      null
+      undefined // No fallback - sessions should be explicitly cached
     );
   }
 
@@ -115,7 +115,7 @@ export class SessionCacheService {
       logger.debug(`Cached user profile for ${user.id}`);
       return result;
     } catch (error) {
-      logger.error('User cache error:', error);
+      logger.error('User cache error:', error as any);
       return false;
     }
   }
@@ -155,7 +155,7 @@ export class SessionCacheService {
       logger.debug(`Cached preferences for user ${preferences.userId}`);
       return result;
     } catch (error) {
-      logger.error('User preferences cache error:', error);
+      logger.error('User preferences cache error:', error as any);
       return false;
     }
   }
@@ -184,7 +184,7 @@ export class SessionCacheService {
       logger.debug(`Cached ${sessions.length} active sessions for user ${userId}`);
       return result;
     } catch (error) {
-      logger.error('Active sessions cache error:', error);
+      logger.error('Active sessions cache error:', error as any);
       return false;
     }
   }
@@ -215,7 +215,7 @@ export class SessionCacheService {
 
       logger.debug(`Invalidated session cache: ${sessionId}`);
     } catch (error) {
-      logger.error('Session invalidation error:', error);
+      logger.error('Session invalidation error:', error as any);
     }
   }
 
@@ -242,7 +242,7 @@ export class SessionCacheService {
 
       logger.debug(`Invalidated all cache for user: ${userId}`);
     } catch (error) {
-      logger.error('User cache invalidation error:', error);
+      logger.error('User cache invalidation error:', error as any);
     }
   }
 
@@ -308,7 +308,7 @@ export class SessionCacheService {
         await this.cacheSession(session);
       }
     } catch (error) {
-      logger.error('Session access update error:', error);
+      logger.error('Session access update error:', error as any);
     }
   }
 
@@ -339,7 +339,7 @@ export class SessionCacheService {
         cacheHitRate: sessionMetrics.hitRate
       };
     } catch (error) {
-      logger.error('Session stats error:', error);
+      logger.error('Session stats error:', error as any);
       return {
         totalSessions: 0,
         activeSessions: 0,

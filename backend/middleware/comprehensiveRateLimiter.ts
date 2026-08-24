@@ -289,6 +289,36 @@ export const authEndpointLimiter = createRateLimiter({
   skip: () => false
 });
 
+export const scheduledPaymentLimiter = createRateLimiter({
+  windowMs: 5 * 60 * 1000,
+  max: 10,
+  message: 'Too many scheduled payment operations, please try again later.'
+});
+
+export const webhookLimiter = createRateLimiter({
+  windowMs: 1 * 60 * 1000,
+  max: 60,
+  message: 'Too many webhook requests, please try again later.'
+});
+
+export const fileUploadLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: 'Too many file uploads, please try again later.'
+});
+
+export const exportLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: 'Too many export requests, please try again later.'
+});
+
+export const downloadLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 50,
+  message: 'Too many download requests, please try again later.'
+});
+
 export const userBasedRateLimiter = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const ip = req.ip || req.connection.remoteAddress || 'unknown';

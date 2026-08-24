@@ -9,6 +9,7 @@ import { ApiDocumentation } from '../swagger/ApiDocumentation';
 
 // Import routes
 import authRoutes from '../routes/v1/auth';
+import { sanitizeInput } from '../../middleware/inputSanitization';
 
 /**
  * Standardized Application Setup
@@ -91,7 +92,10 @@ export class StandardizedApp {
       limit: '10mb'
     }));
 
-    // 4. API versioning
+    // 4. Input sanitization (XSS prevention)
+    this.app.use('/api', sanitizeInput);
+
+    // 5. API versioning
     this.app.use('/api', ApiVersioning.versionMiddleware);
 
     // 5. Request logging

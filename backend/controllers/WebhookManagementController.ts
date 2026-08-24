@@ -1,8 +1,9 @@
 import { Request, Response } from 'express';
 import { webhookService } from '../WebhookService';
-import { webhookMonitor } from '../WebhookMonitor';
+import { webhookMonitor } from '../services/WebhookMonitor';
 import { logger } from '../logger';
 import prisma from '../prismaClient';
+import { errorResponse } from '../utils/errorResponse';
 
 /**
  * Webhook Management API Controller
@@ -14,7 +15,7 @@ export class WebhookManagementController {
    */
   static async getDashboard(req: Request, res: Response): Promise<void> {
     try {
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
 
       const [userMetrics, userWebhooks, healthStatuses] = await Promise.all([
         webhookMonitor.getUserMetrics(userId),
@@ -38,10 +39,7 @@ export class WebhookManagementController {
       });
     } catch (error) {
       logger.error(`Error getting dashboard: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -52,25 +50,19 @@ export class WebhookManagementController {
   static async getWebhookDetails(req: Request, res: Response): Promise<void> {
     try {
       const { webhookId } = req.params;
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
 
       const webhook = await prisma.webhook.findUnique({
         where: { id: webhookId },
       });
 
       if (!webhook) {
-        res.status(404).json({
-          success: false,
-          error: 'Webhook not found',
-        });
+        errorResponse(res, 404, 'Webhook not found');
         return;
       }
 
       if (webhook.userId !== userId) {
-        res.status(403).json({
-          success: false,
-          error: 'Unauthorized',
-        });
+        errorResponse(res, 403, 'Unauthorized');
         return;
       }
 
@@ -93,10 +85,7 @@ export class WebhookManagementController {
       });
     } catch (error) {
       logger.error(`Error getting webhook details: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -106,7 +95,7 @@ export class WebhookManagementController {
    */
   static async getPerformanceReport(req: Request, res: Response): Promise<void> {
     try {
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
       const { startDate, endDate } = req.query;
 
       const report = await webhookMonitor.generatePerformanceReport(
@@ -121,10 +110,7 @@ export class WebhookManagementController {
       });
     } catch (error) {
       logger.error(`Error getting performance report: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -148,10 +134,7 @@ export class WebhookManagementController {
       });
     } catch (error) {
       logger.error(`Error getting failed deliveries: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -162,7 +145,7 @@ export class WebhookManagementController {
   static async bulkRetryFailedEvents(req: Request, res: Response): Promise<void> {
     try {
       const { webhookId, eventIds } = req.body;
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
 
       // Verify ownership
       const webhook = await prisma.webhook.findUnique({
@@ -170,10 +153,7 @@ export class WebhookManagementController {
       });
 
       if (!webhook || webhook.userId !== userId) {
-        res.status(403).json({
-          success: false,
-          error: 'Unauthorized',
-        });
+        errorResponse(res, 403, 'Unauthorized');
         return;
       }
 
@@ -202,10 +182,7 @@ export class WebhookManagementController {
       });
     } catch (error) {
       logger.error(`Error bulk retrying failed events: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -215,7 +192,7 @@ export class WebhookManagementController {
    */
   static async exportWebhookData(req: Request, res: Response): Promise<void> {
     try {
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
       const { format = 'json' } = req.query;
 
       const [webhooks, metrics, report] = await Promise.all([
@@ -250,10 +227,7 @@ export class WebhookManagementController {
       }
     } catch (error) {
       logger.error(`Error exporting webhook data: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -263,7 +237,7 @@ export class WebhookManagementController {
    */
   static async getAnalytics(req: Request, res: Response): Promise<void> {
     try {
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
 
       const [metrics, eventStats, userHealthStatuses] = await Promise.all([
         webhookMonitor.getUserMetrics(userId),
@@ -294,10 +268,7 @@ export class WebhookManagementController {
       });
     } catch (error) {
       logger.error(`Error getting analytics: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 }
@@ -313,7 +284,7 @@ export class WebhookTestingController {
   static async createTestEvent(req: Request, res: Response): Promise<void> {
     try {
       const { webhookId, eventType, payload } = req.body;
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
 
       // Verify ownership
       const webhook = await prisma.webhook.findUnique({
@@ -321,10 +292,7 @@ export class WebhookTestingController {
       });
 
       if (!webhook || webhook.userId !== userId) {
-        res.status(403).json({
-          success: false,
-          error: 'Unauthorized',
-        });
+        errorResponse(res, 403, 'Unauthorized');
         return;
       }
 
@@ -343,10 +311,7 @@ export class WebhookTestingController {
       ];
 
       if (!validEvents.includes(eventType)) {
-        res.status(400).json({
-          success: false,
-          error: `Invalid event type: ${eventType}`,
-        });
+        errorResponse(res, 400, `Invalid event type: ${eventType}`);
         return;
       }
 
@@ -359,10 +324,7 @@ export class WebhookTestingController {
       });
     } catch (error) {
       logger.error(`Error creating test event: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -373,7 +335,7 @@ export class WebhookTestingController {
   static async getTestHistory(req: Request, res: Response): Promise<void> {
     try {
       const { webhookId } = req.params;
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
       const { limit = '20' } = req.query;
 
       // Verify ownership
@@ -382,10 +344,7 @@ export class WebhookTestingController {
       });
 
       if (!webhook || webhook.userId !== userId) {
-        res.status(403).json({
-          success: false,
-          error: 'Unauthorized',
-        });
+        errorResponse(res, 403, 'Unauthorized');
         return;
       }
 
@@ -404,10 +363,7 @@ export class WebhookTestingController {
       });
     } catch (error) {
       logger.error(`Error getting test history: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -418,7 +374,7 @@ export class WebhookTestingController {
   static async testWithPayload(req: Request, res: Response): Promise<void> {
     try {
       const { webhookId, payload } = req.body;
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
 
       // Verify ownership
       const webhook = await prisma.webhook.findUnique({
@@ -426,10 +382,7 @@ export class WebhookTestingController {
       });
 
       if (!webhook || webhook.userId !== userId) {
-        res.status(403).json({
-          success: false,
-          error: 'Unauthorized',
-        });
+        errorResponse(res, 403, 'Unauthorized');
         return;
       }
 
@@ -442,10 +395,7 @@ export class WebhookTestingController {
       });
     } catch (error) {
       logger.error(`Error testing webhook with payload: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 
@@ -456,7 +406,7 @@ export class WebhookTestingController {
   static async debugDeliveryAttempt(req: Request, res: Response): Promise<void> {
     try {
       const { eventId } = req.params;
-      const userId = (req as any).userId;
+      const userId = (req as any).user?.id;
 
       const event = await prisma.webhookEvent.findUnique({
         where: { id: eventId },
@@ -467,18 +417,12 @@ export class WebhookTestingController {
       });
 
       if (!event) {
-        res.status(404).json({
-          success: false,
-          error: 'Event not found',
-        });
+        errorResponse(res, 404, 'Event not found');
         return;
       }
 
       if (event.webhook.userId !== userId) {
-        res.status(403).json({
-          success: false,
-          error: 'Unauthorized',
-        });
+        errorResponse(res, 403, 'Unauthorized');
         return;
       }
 
@@ -508,10 +452,7 @@ export class WebhookTestingController {
       });
     } catch (error) {
       logger.error(`Error debugging delivery attempt: ${error}`);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      });
+      errorResponse(res, 500, error instanceof Error ? error.message : 'Internal server error');
     }
   }
 }

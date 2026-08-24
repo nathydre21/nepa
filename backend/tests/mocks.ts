@@ -9,6 +9,8 @@ export const mockRequest = (overrides: Partial<Request> = {}): Request => {
     headers: {},
     method: 'GET',
     url: '/test',
+    ip: '127.0.0.1',
+    connection: { remoteAddress: '127.0.0.1' },
     user: null,
     ...overrides
   } as Request;
@@ -21,6 +23,7 @@ export const mockResponse = (): Response => {
   res.status = jest.fn().mockReturnValue(res);
   res.json = jest.fn().mockReturnValue(res);
   res.send = jest.fn().mockReturnValue(res);
+  res.setHeader = jest.fn().mockReturnValue(res);
   res.cookie = jest.fn().mockReturnValue(res);
   res.clearCookie = jest.fn().mockReturnValue(res);
   res.redirect = jest.fn().mockReturnValue(res);
@@ -33,6 +36,7 @@ export const mockNext = (): NextFunction => {
 
 export const createMockAuth = (userId: string, role: string = 'USER') => {
   return {
+    id: userId,
     userId,
     role,
     email: 'test@example.com',

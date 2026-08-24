@@ -227,7 +227,7 @@ export class CacheStrategy {
       this.recordMetric(pattern, 'miss', Date.now() - startTime);
       return null;
     } catch (error) {
-      logger.error(`Cache get error for pattern ${pattern}:`, error);
+      logger.error(`Cache get error for pattern ${pattern}:`, error as any);
       this.recordMetric(pattern, 'error', Date.now() - startTime);
       
       // Fallback on error
@@ -267,7 +267,7 @@ export class CacheStrategy {
 
       return result;
     } catch (error) {
-      logger.error(`Cache set error for pattern ${pattern}:`, error);
+      logger.error(`Cache set error for pattern ${pattern}:`, error as any);
       return false;
     }
   }
@@ -298,7 +298,7 @@ export class CacheStrategy {
         tags || []
       );
     } catch (error) {
-      logger.error(`Cache invalidation error for pattern ${pattern}:`, error);
+      logger.error(`Cache invalidation error for pattern ${pattern}:`, error as any);
     }
   }
 
@@ -322,7 +322,7 @@ export class CacheStrategy {
         await this.set(pattern, params, data);
         logger.debug(`Warmed up cache for pattern: ${pattern}`);
       } catch (error) {
-        logger.error(`Cache warmup error for pattern ${pattern}:`, error);
+        logger.error(`Cache warmup error for pattern ${pattern}:`, error as any);
       }
     });
 
@@ -429,7 +429,7 @@ export class CacheStrategy {
           keyCount: stats.keyCount
         });
       } catch (error) {
-        logger.error('Metrics collection error:', error);
+        logger.error('Metrics collection error:', error as any);
       }
     }, 60000); // Every minute
   }

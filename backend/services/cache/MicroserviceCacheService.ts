@@ -64,7 +64,7 @@ export class MicroserviceCacheService {
       logger.debug(`Cached payment history for user ${userId}, page ${page}`);
       return result;
     } catch (error) {
-      logger.error('Payment history cache error:', error);
+      logger.error('Payment cache error:', error as any);
       return false;
     }
   }
@@ -97,7 +97,7 @@ export class MicroserviceCacheService {
       logger.debug(`Cached ${payments.length} recent payments for user ${userId}`);
       return result;
     } catch (error) {
-      logger.error('Recent payments cache error:', error);
+      logger.error('Recent payments cache error:', error as any);
       return false;
     }
   }
@@ -134,7 +134,7 @@ export class MicroserviceCacheService {
 
       logger.debug(`Invalidated payment cache for user ${userId}`);
     } catch (error) {
-      logger.error('Payment cache invalidation error:', error);
+      logger.error('Payment cache invalidation error:', error as any);
     }
   }
 
@@ -155,7 +155,7 @@ export class MicroserviceCacheService {
       logger.debug(`Cached ${bills.length} bills for user ${userId}`);
       return result;
     } catch (error) {
-      logger.error('User bills cache error:', error);
+      logger.error('User bills cache error:', error as any);
       return false;
     }
   }
@@ -187,7 +187,7 @@ export class MicroserviceCacheService {
       logger.debug(`Cached bill status for ${billId}`);
       return result;
     } catch (error) {
-      logger.error('Bill status cache error:', error);
+      logger.error('Bill status cache error:', error as any);
       return false;
     }
   }
@@ -224,7 +224,7 @@ export class MicroserviceCacheService {
 
       logger.debug(`Invalidated billing cache for user ${userId}`);
     } catch (error) {
-      logger.error('Billing cache invalidation error:', error);
+      logger.error('Billing cache invalidation error:', error as any);
     }
   }
 
@@ -245,7 +245,7 @@ export class MicroserviceCacheService {
       logger.debug(`Cached webhook config for ${webhookId}`);
       return result;
     } catch (error) {
-      logger.error('Webhook config cache error:', error);
+      logger.error('Webhook config cache error:', error as any);
       return false;
     }
   }
@@ -277,7 +277,7 @@ export class MicroserviceCacheService {
       logger.debug(`Cached ${webhooks.length} webhooks for user ${userId}`);
       return result;
     } catch (error) {
-      logger.error('User webhooks cache error:', error);
+      logger.error('User webhooks cache error:', error as any);
       return false;
     }
   }
@@ -309,7 +309,7 @@ export class MicroserviceCacheService {
       logger.debug(`Cached webhook events for ${webhookId}, page ${page}`);
       return result;
     } catch (error) {
-      logger.error('Webhook events cache error:', error);
+      logger.error('Webhook events cache error:', error as any);
       return false;
     }
   }
@@ -347,7 +347,7 @@ export class MicroserviceCacheService {
 
       logger.debug(`Invalidated webhook cache for user ${userId}`);
     } catch (error) {
-      logger.error('Webhook cache invalidation error:', error);
+      logger.error('Webhook cache invalidation error:', error as any);
     }
   }
 
@@ -372,7 +372,7 @@ export class MicroserviceCacheService {
       logger.debug(`Cached dashboard analytics for user ${userId}, timeframe ${timeframe}`);
       return result;
     } catch (error) {
-      logger.error('Dashboard analytics cache error:', error);
+      logger.error('Dashboard analytics cache error:', error as any);
       return false;
     }
   }
@@ -405,7 +405,7 @@ export class MicroserviceCacheService {
       logger.debug(`Cached revenue analytics for period ${period}`);
       return result;
     } catch (error) {
-      logger.error('Revenue analytics cache error:', error);
+      logger.error('Revenue analytics cache error:', error as any);
       return false;
     }
   }
@@ -437,7 +437,7 @@ export class MicroserviceCacheService {
       logger.debug(`Cached user growth analytics for period ${period}`);
       return result;
     } catch (error) {
-      logger.error('User growth analytics cache error:', error);
+      logger.error('User growth analytics cache error:', error as any);
       return false;
     }
   }
@@ -471,7 +471,7 @@ export class MicroserviceCacheService {
 
       logger.debug(`Invalidated analytics cache${userId ? ` for user ${userId}` : ''}`);
     } catch (error) {
-      logger.error('Analytics cache invalidation error:', error);
+      logger.error('Analytics cache invalidation error:', error as any);
     }
   }
 
@@ -492,7 +492,7 @@ export class MicroserviceCacheService {
       logger.debug(`Cached ${providers.length} utility providers`);
       return result;
     } catch (error) {
-      logger.error('Utility providers cache error:', error);
+      logger.error('Utility providers cache error:', error as any);
       return false;
     }
   }
@@ -521,7 +521,7 @@ export class MicroserviceCacheService {
       logger.debug(`Cached ${types.length} utility types`);
       return result;
     } catch (error) {
-      logger.error('Utility types cache error:', error);
+      logger.error('Utility types cache error:', error as any);
       return false;
     }
   }
@@ -545,7 +545,147 @@ export class MicroserviceCacheService {
       await this.cacheStrategy.invalidate('', {}, ['utility', 'static']);
       logger.debug('Invalidated utility cache');
     } catch (error) {
-      logger.error('Utility cache invalidation error:', error);
+      logger.error('Utility cache invalidation error:', error as any);
+    }
+  }
+
+
+  /**
+   * SCHEDULED PAYMENT SERVICE CACHING (Work #120)
+   */
+
+  async cacheScheduledPayments(userId: string, schedules: any[]): Promise<boolean> {
+    try {
+      const result = await this.cacheStrategy.set('payment:recent', { userId }, schedules);
+      logger.debug(`Cached ${schedules.length} scheduled payments for user ${userId}`);
+      return result;
+    } catch (error) {
+      logger.error('Scheduled payments cache error:', error);
+      return false;
+    }
+  }
+
+  async getScheduledPayments(userId: string, fallback?: () => Promise<any[]>): Promise<any[] | null> {
+    return await this.cacheStrategy.get<any[]>('payment:recent', { userId }, fallback);
+  }
+
+  async cacheScheduledPaymentById(id: string, schedule: any): Promise<boolean> {
+    try {
+      const result = await this.cacheStrategy.set('bill:status', { billId: id }, schedule);
+      logger.debug(`Cached scheduled payment ${id}`);
+      return result;
+    } catch (error) {
+      logger.error('Scheduled payment cache error:', error);
+      return false;
+    }
+  }
+
+  async getScheduledPaymentById(id: string, fallback?: () => Promise<any>): Promise<any | null> {
+    return await this.cacheStrategy.get<any>('bill:status', { billId: id }, fallback);
+  }
+
+  async invalidateScheduledPaymentCache(userId: string, scheduleId?: string): Promise<void> {
+    try {
+      await this.cacheStrategy.invalidate('payment:recent', { userId });
+      if (scheduleId) {
+        await this.cacheStrategy.invalidate('bill:status', { billId: scheduleId });
+      }
+      await this.cacheStrategy.invalidate('', {}, ['payment', 'user']);
+      logger.debug(`Invalidated scheduled payment cache for user ${userId}`);
+    } catch (error) {
+      logger.error('Scheduled payment cache invalidation error:', error);
+    }
+  }
+
+  /**
+   * NOTIFICATION SERVICE CACHING
+   */
+
+  async cacheNotificationPreferences(userId: string, preferences: any): Promise<boolean> {
+    try {
+      const result = await this.cacheStrategy.set('user:preferences',
+        { userId: `notif:${userId}` }, preferences);
+      logger.debug(`Cached notification preferences for user ${userId}`);
+      return result;
+    } catch (error) {
+      logger.error('Notification preferences cache error:', error);
+      return false;
+    }
+  }
+
+  async getNotificationPreferences(userId: string, fallback?: () => Promise<any>): Promise<any | null> {
+    return await this.cacheStrategy.get<any>('user:preferences', { userId: `notif:${userId}` }, fallback);
+  }
+
+  async cacheNotificationTemplates(templates: any[]): Promise<boolean> {
+    try {
+      const result = await this.cacheStrategy.set('utility:types', {}, templates);
+      logger.debug(`Cached ${templates.length} notification templates`);
+      return result;
+    } catch (error) {
+      logger.error('Notification templates cache error:', error);
+      return false;
+    }
+  }
+
+  async getNotificationTemplates(fallback?: () => Promise<any[]>): Promise<any[] | null> {
+    return await this.cacheStrategy.get<any[]>('utility:types', {}, fallback);
+  }
+
+  async invalidateNotificationCache(userId: string): Promise<void> {
+    try {
+      await this.cacheStrategy.invalidate('user:preferences', { userId: `notif:${userId}` });
+      logger.debug(`Invalidated notification cache for user ${userId}`);
+    } catch (error) {
+      logger.error('Notification cache invalidation error:', error);
+    }
+  }
+
+  /**
+   * DOCUMENT SERVICE CACHING
+   */
+
+  async cacheDocumentMetadata(documentId: string, metadata: any): Promise<boolean> {
+    try {
+      const result = await this.cacheStrategy.set('bill:status',
+        { billId: `doc:${documentId}` }, metadata);
+      logger.debug(`Cached document metadata for ${documentId}`);
+      return result;
+    } catch (error) {
+      logger.error('Document metadata cache error:', error);
+      return false;
+    }
+  }
+
+  async getDocumentMetadata(documentId: string, fallback?: () => Promise<any>): Promise<any | null> {
+    return await this.cacheStrategy.get<any>('bill:status', { billId: `doc:${documentId}` }, fallback);
+  }
+
+  async cacheUserDocuments(userId: string, documents: any[]): Promise<boolean> {
+    try {
+      const result = await this.cacheStrategy.set('bill:user',
+        { userId: `docs:${userId}` }, documents);
+      logger.debug(`Cached ${documents.length} documents for user ${userId}`);
+      return result;
+    } catch (error) {
+      logger.error('User documents cache error:', error);
+      return false;
+    }
+  }
+
+  async getUserDocuments(userId: string, fallback?: () => Promise<any[]>): Promise<any[] | null> {
+    return await this.cacheStrategy.get<any[]>('bill:user', { userId: `docs:${userId}` }, fallback);
+  }
+
+  async invalidateDocumentCache(userId: string, documentId?: string): Promise<void> {
+    try {
+      await this.cacheStrategy.invalidate('bill:user', { userId: `docs:${userId}` });
+      if (documentId) {
+        await this.cacheStrategy.invalidate('bill:status', { billId: `doc:${documentId}` });
+      }
+      logger.debug(`Invalidated document cache for user ${userId}`);
+    } catch (error) {
+      logger.error('Document cache invalidation error:', error);
     }
   }
 
@@ -568,7 +708,7 @@ export class MicroserviceCacheService {
         const success = await this.cacheStrategy.set(pattern, params, data);
         if (success) cached++;
       } catch (error) {
-        logger.error(`Batch cache error for pattern ${pattern}:`, error);
+        logger.error(`Batch cache error for pattern ${pattern}:`, error as any);
       }
     });
 
@@ -610,16 +750,14 @@ export class MicroserviceCacheService {
 
       // Populate metrics for each service
       Object.keys(stats).forEach(service => {
-        stats[service].patterns.forEach(pattern => {
-          if (metrics[pattern]) {
-            stats[service].metrics[pattern] = metrics[pattern];
-          }
+        (stats as any)[service].patterns.forEach((pattern: any) => {
+          (stats as any)[service].metrics[pattern] = metrics[pattern];
         });
       });
 
       return stats;
     } catch (error) {
-      logger.error('Microservices cache stats error:', error);
+      logger.error('Microservices cache stats error:', error as any);
       return {};
     }
   }

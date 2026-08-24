@@ -14,12 +14,14 @@ import { uploadDocument } from '../controllers/DocumentController';
 import { getDashboardData, generateReport, exportData } from '../controllers/AnalyticsController';
 import { applyPaymentSecurity, processPayment, getPaymentHistory, validatePayment } from '../controllers/PaymentController';
 import { UserRole } from '@prisma/client';
+import { sanitizeInput } from '../middleware/inputSanitization';
 
 const authController = new AuthenticationController();
 const userController = new UserController();
 
 function registerV1Routes(router: Router): void {
   router.use(apiKeyAuth);
+  router.use(sanitizeInput);
 
   router.post('/auth/register', authLimiter, authController.register.bind(authController));
   router.post('/auth/login', authLimiter, authController.login.bind(authController));

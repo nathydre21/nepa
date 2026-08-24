@@ -43,7 +43,7 @@ logger.info('🧠 Memory monitoring system initialized');
 
 // Expose connection stats on the health endpoint by patching the app's
 // /health handler is not practical here, so we attach a dedicated endpoint.
-app.get('/api/monitoring/websocket', (_req, res) => {
+app.get('/api/monitoring/websocket', (_req: any, res: any) => {
   res.json({
     status: 'ok',
     ...socketServer.getConnectionStats(),

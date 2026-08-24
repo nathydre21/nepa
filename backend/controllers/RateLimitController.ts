@@ -6,6 +6,7 @@ import { apiKeyAuth } from '../src/config/auth';
 import { APIKeyManagementService } from '../services/APIKeyManagementService';
 import { IPBlockingService } from '../services/IPBlockingService';
 import { RateLimitBreachNotificationService } from '../services/RateLimitBreachNotificationService';
+import { errorResponse } from '../utils/errorResponse';
 
 const rateLimitService = new AdvancedRateLimitService();
 const apiKeyService = new APIKeyManagementService();
@@ -70,11 +71,7 @@ export const getRateLimitAnalytics = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Analytics error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to generate analytics',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    errorResponse(res, 500, 'Failed to generate analytics');
   }
 };
 
@@ -130,11 +127,7 @@ export const getBreachHistory = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Breach history error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch breach history',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    errorResponse(res, 500, 'Failed to fetch breach history');
   }
 };
 
@@ -167,10 +160,7 @@ export const getUserRateLimitProfile = async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
     
     if (!userId) {
-      return res.status(400).json({
-        success: false,
-        error: 'User authentication required'
-      });
+      return errorResponse(res, 400, 'User authentication required');
     }
 
     const profile = await rateLimitService.getUserRateLimitProfile(userId);
@@ -181,11 +171,7 @@ export const getUserRateLimitProfile = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Get profile error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch user profile',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    errorResponse(res, 500, 'Failed to fetch user profile');
   }
 };
 
@@ -218,10 +204,7 @@ export const getAnyUserRateLimitProfile = async (req: Request, res: Response) =>
     const { userId } = req.params;
     
     if (!userId) {
-      return res.status(400).json({
-        success: false,
-        error: 'User ID required'
-      });
+      return errorResponse(res, 400, 'User ID required');
     }
 
     const profile = await rateLimitService.getUserRateLimitProfile(userId);
@@ -232,11 +215,7 @@ export const getAnyUserRateLimitProfile = async (req: Request, res: Response) =>
     });
   } catch (error) {
     console.error('Get profile error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch user profile',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    errorResponse(res, 500, 'Failed to fetch user profile');
   }
 };
 
@@ -291,10 +270,7 @@ export const updateUserRateLimitProfile = async (req: Request, res: Response) =>
     const { tier, whitelist, blacklist, customLimits, metadata } = req.body;
 
     if (!userId) {
-      return res.status(400).json({
-        success: false,
-        error: 'User ID required'
-      });
+      return errorResponse(res, 400, 'User ID required');
     }
 
     const existingProfile = await rateLimitService.getUserRateLimitProfile(userId);
@@ -316,11 +292,7 @@ export const updateUserRateLimitProfile = async (req: Request, res: Response) =>
     });
   } catch (error) {
     console.error('Update profile error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to update user profile',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    errorResponse(res, 500, 'Failed to update user profile');
   }
 };
 
@@ -383,10 +355,7 @@ export const checkRateLimit = async (req: Request, res: Response) => {
     const { userId, ip, endpoint, method } = req.body;
 
     if (!endpoint || !method) {
-      return res.status(400).json({
-        success: false,
-        error: 'Endpoint and method are required'
-      });
+      return errorResponse(res, 400, 'Endpoint and method are required');
     }
 
     // Create a mock request object
@@ -424,11 +393,7 @@ export const checkRateLimit = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Rate limit check error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to check rate limit',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    errorResponse(res, 500, 'Failed to check rate limit');
   }
 };
 
@@ -468,11 +433,7 @@ export const getRateLimitTiers = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Get tiers error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch rate limit tiers',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    errorResponse(res, 500, 'Failed to fetch rate limit tiers');
   }
 };
 
@@ -512,11 +473,7 @@ export const getRateLimitRules = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Get rules error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch rate limit rules',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    errorResponse(res, 500, 'Failed to fetch rate limit rules');
   }
 };
 
@@ -559,19 +516,13 @@ export const generateAPIKey = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.id;
     if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized'
-      });
+      return errorResponse(res, 401, 'Unauthorized');
     }
 
     const { name, tier = 'BASIC', endpoints, description, expiresAt } = req.body;
 
     if (!name) {
-      return res.status(400).json({
-        success: false,
-        error: 'API key name is required'
-      });
+      return errorResponse(res, 400, 'API key name is required');
     }
 
     const { apiKey, keyId } = await apiKeyService.generateAPIKey(userId, name, {
@@ -591,11 +542,7 @@ export const generateAPIKey = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Generate API key error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to generate API key',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    errorResponse(res, 500, 'Failed to generate API key');
   }
 };
 
@@ -616,10 +563,7 @@ export const getUserAPIKeys = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.id;
     if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized'
-      });
+      return errorResponse(res, 401, 'Unauthorized');
     }
 
     const keys = await apiKeyService.getUserAPIKeys(userId);
@@ -631,11 +575,7 @@ export const getUserAPIKeys = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Get API keys error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch API keys',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    errorResponse(res, 500, 'Failed to fetch API keys');
   }
 };
 
@@ -659,19 +599,13 @@ export const getAPIKeyDetails = async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
 
     if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized'
-      });
+      return errorResponse(res, 401, 'Unauthorized');
     }
 
     const keyData = await apiKeyService.getAPIKeyDetails(keyId);
 
     if (!keyData || keyData.userId !== userId) {
-      return res.status(404).json({
-        success: false,
-        error: 'API key not found'
-      });
+      return errorResponse(res, 404, 'API key not found');
     }
 
     res.json({
@@ -680,11 +614,7 @@ export const getAPIKeyDetails = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Get API key details error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch API key details',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    errorResponse(res, 500, 'Failed to fetch API key details');
   }
 };
 
@@ -702,19 +632,13 @@ export const revokeAPIKey = async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
 
     if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized'
-      });
+      return errorResponse(res, 401, 'Unauthorized');
     }
 
     const keyData = await apiKeyService.getAPIKeyDetails(keyId);
 
     if (!keyData || keyData.userId !== userId) {
-      return res.status(404).json({
-        success: false,
-        error: 'API key not found'
-      });
+      return errorResponse(res, 404, 'API key not found');
     }
 
     await apiKeyService.revokeAPIKey(keyId);
@@ -725,11 +649,7 @@ export const revokeAPIKey = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Revoke API key error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to revoke API key',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    errorResponse(res, 500, 'Failed to revoke API key');
   }
 };
 
@@ -748,19 +668,13 @@ export const getAPIKeyUsage = async (req: Request, res: Response) => {
     const { lookbackMs = '86400000' } = req.query;
 
     if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized'
-      });
+      return errorResponse(res, 401, 'Unauthorized');
     }
 
     const keyData = await apiKeyService.getAPIKeyDetails(keyId);
 
     if (!keyData || keyData.userId !== userId) {
-      return res.status(404).json({
-        success: false,
-        error: 'API key not found'
-      });
+      return errorResponse(res, 404, 'API key not found');
     }
 
     const usage = await apiKeyService.getAPIKeyUsage(keyId, parseInt(lookbackMs as string));
@@ -771,11 +685,7 @@ export const getAPIKeyUsage = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Get API key usage error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch API key usage',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    errorResponse(res, 500, 'Failed to fetch API key usage');
   }
 };
 
@@ -801,10 +711,7 @@ export const getBlockedIPs = async (req: Request, res: Response) => {
   try {
     // Admin only
     if ((req as any).user?.role !== 'ADMIN' && (req as any).user?.role !== 'SUPER_ADMIN') {
-      return res.status(403).json({
-        success: false,
-        error: 'Admin access required'
-      });
+      return errorResponse(res, 403, 'Admin access required');
     }
 
     const { limit = 100, offset = 0 } = req.query;
@@ -818,11 +725,7 @@ export const getBlockedIPs = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Get blocked IPs error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch blocked IPs',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    errorResponse(res, 500, 'Failed to fetch blocked IPs');
   }
 };
 
@@ -852,19 +755,13 @@ export const blockIP = async (req: Request, res: Response) => {
   try {
     // Admin only
     if ((req as any).user?.role !== 'ADMIN' && (req as any).user?.role !== 'SUPER_ADMIN') {
-      return res.status(403).json({
-        success: false,
-        error: 'Admin access required'
-      });
+      return errorResponse(res, 403, 'Admin access required');
     }
 
     const { ip, reason, severity = 'MEDIUM' } = req.body;
 
     if (!ip || !reason) {
-      return res.status(400).json({
-        success: false,
-        error: 'IP and reason are required'
-      });
+      return errorResponse(res, 400, 'IP and reason are required');
     }
 
     const record = await ipBlockingService.blockIP(ip, reason, severity as any, false, {
@@ -878,11 +775,7 @@ export const blockIP = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Block IP error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to block IP',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    errorResponse(res, 500, 'Failed to block IP');
   }
 };
 
@@ -907,28 +800,19 @@ export const unblockIP = async (req: Request, res: Response) => {
   try {
     // Admin only
     if ((req as any).user?.role !== 'ADMIN' && (req as any).user?.role !== 'SUPER_ADMIN') {
-      return res.status(403).json({
-        success: false,
-        error: 'Admin access required'
-      });
+      return errorResponse(res, 403, 'Admin access required');
     }
 
     const { ip } = req.body;
 
     if (!ip) {
-      return res.status(400).json({
-        success: false,
-        error: 'IP is required'
-      });
+      return errorResponse(res, 400, 'IP is required');
     }
 
     const result = await ipBlockingService.unblockIP(ip);
 
     if (!result) {
-      return res.status(404).json({
-        success: false,
-        error: 'IP not found in blocklist'
-      });
+      return errorResponse(res, 404, 'IP not found in blocklist');
     }
 
     res.json({
@@ -937,11 +821,7 @@ export const unblockIP = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Unblock IP error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to unblock IP',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    errorResponse(res, 500, 'Failed to unblock IP');
   }
 };
 
@@ -957,19 +837,13 @@ export const whitelistIP = async (req: Request, res: Response) => {
   try {
     // Admin only
     if ((req as any).user?.role !== 'ADMIN' && (req as any).user?.role !== 'SUPER_ADMIN') {
-      return res.status(403).json({
-        success: false,
-        error: 'Admin access required'
-      });
+      return errorResponse(res, 403, 'Admin access required');
     }
 
     const { ip } = req.body;
 
     if (!ip) {
-      return res.status(400).json({
-        success: false,
-        error: 'IP is required'
-      });
+      return errorResponse(res, 400, 'IP is required');
     }
 
     await ipBlockingService.whitelistIP(ip);
@@ -980,11 +854,7 @@ export const whitelistIP = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Whitelist IP error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to whitelist IP',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    errorResponse(res, 500, 'Failed to whitelist IP');
   }
 };
 
@@ -1014,11 +884,7 @@ export const getNotificationPreferences = async (req: Request, res: Response) =>
     });
   } catch (error) {
     console.error('Get notification preferences error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch notification preferences',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    errorResponse(res, 500, 'Failed to fetch notification preferences');
   }
 };
 
@@ -1049,11 +915,7 @@ export const updateNotificationPreferences = async (req: Request, res: Response)
     });
   } catch (error) {
     console.error('Update notification preferences error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to update notification preferences',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    errorResponse(res, 500, 'Failed to update notification preferences');
   }
 };
 
@@ -1071,23 +933,4 @@ export const updateNotificationPreferences = async (req: Request, res: Response)
  *           type: integer
  *           default: 100
  */
-export const getBreachHistory = async (req: Request, res: Response) => {
-  try {
-    const { limit = 100, offset = 0 } = req.query;
-
-    const breaches = await notificationService.getBreachHistory(parseInt(limit as string), parseInt(offset as string));
-
-    res.json({
-      success: true,
-      data: breaches,
-      count: breaches.length
-    });
-  } catch (error) {
-    console.error('Get breach history error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch breach history',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-};
+// Duplicate function removed - keeping the first declaration at line 119

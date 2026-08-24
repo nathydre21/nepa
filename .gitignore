@@ -3,6 +3,8 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+/node_modules
+node_modules
 
 # Production builds
 dist/
@@ -94,6 +96,7 @@ jspm_packages/
 # Rust/Soroban
 target/
 Cargo.lock
+!contract/nepa_contract/Cargo.lock
 **/*.rs.bk
 
 # Stellar/Soroban
@@ -105,3 +108,14 @@ test-data/
 
 # Exclude Kiro files and folders
 .kiro/
+
+# PR description and local documentation files
+PR_*.md
+GITHUB_ISSUES.md
+TEST_IMPLEMENTATION_SUMMARY.md
+PHASE_1_TESTING_COMPLETE.md
+# PR description files
+PR_*.md
+
+# Deprecated frontend
+nepa-frontend/package-lock.json

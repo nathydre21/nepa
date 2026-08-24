@@ -1,34 +1,49 @@
 import express from 'express';
 import swaggerUi from 'swagger-ui-express';
 import { apiLimiter, ddosDetector, checkBlockedIP, ipRestriction, progressiveLimiter, authLimiter } from './middleware/rateLimiter';
+import { endpointRateLimiter, userRateLimiter, ipRateLimiter, getRateLimitStatus } from './middleware/apiRateLimiter';
 import { configureSecurity } from './middleware/security';
 import { apiKeyAuth } from './src/config/auth';
 import { authenticate, authorize, optionalAuth } from './middleware/authentication';
 import { loggingMiddleware, setupGlobalErrorHandling, errorTracker, logger } from './middleware/logger';
 import { errorTracker as abuseDetector } from './middleware/abuseDetection';
 import { sanitizeInput } from './middleware/inputSanitization';
-import { captureAuditContext, auditRateLimit, auditAuth, auditAdmin, auditPayment, auditDocument } from './middleware/audit';
-import { auditRoutes, fraudRoutes } from './routes/auditRoutes';
+import { captureAuditContext, auditRateLimit, auditAuth, auditAdmin, auditPayment, auditDocument } from './middleware/auditMiddleware';
+import auditRoutes from './routes/auditRoutes';
+import fraudRoutes from './routes/fraudRoutes';
+import webhookRoutes from './routes/webhookRoutes';
 import { swaggerSpec, getVersionedSwaggerSpec } from './swagger';
 import { apiVersioningConfig } from './config/api-versioning';
-import { authController } from './controllers/AuthenticationController';
-import { userController } from './controllers/UserController';
+import { AuthenticationController } from './controllers/AuthenticationController';
+import { UserController } from './controllers/UserController';
 import { upload } from './middleware/upload';
 import { uploadDocument } from './controllers/DocumentController';
 import { getDashboardData, generateReport, exportData } from './controllers/AnalyticsController';
 import { applyPaymentSecurity, processPayment, getPaymentHistory, validatePayment } from './controllers/PaymentController';
 import exportRoutes from './routes/export';
-import { setupRateLimitRoutes } from './routes/rateLimitRoutes';
+// Rate limit routes are set up below after middleware initialization
 import { performanceMonitor } from './services/performanceMonitoring';
 import analyticsService from './services/analytics';
 import { appConfig } from './src/config/environment';
 import ConnectionPoolMonitor from './databases/monitoring/ConnectionPoolMonitor';
 import DatabaseHealthCheck from './databases/monitoring/DatabaseHealthCheck';
 import { MemoryMonitor } from './MemoryMonitor';
-import { UserRole } from '@prisma/client';
+import { AuditAction } from './services/AuditService';
+import { UserRole } from './middleware/authentication';
 import { errorHandler, getErrorStats, getErrorLogs } from './middleware/centralizedErrorHandler';
 import ConnectionPoolManager from './databases/ConnectionPoolManager';
+import scheduledPaymentRoutes from './routes/scheduledPaymentRoutes';
+import { scheduledPaymentService } from './services/ScheduledPaymentService';
+import { webhookQueueService } from './services/WebhookQueueService';
 import { initializeCacheSystem } from './services/cache/CacheInitializer';
+import { requestTimeout } from './middleware/requestTimeout';
+
+// Create controller instances (Issue #407: re-enabled)
+const authController = new AuthenticationController();
+const userController = new UserController();
+
+// Auth flag: when AUTH_ENABLED=false, skip auth middleware (dev only)
+const AUTH_ENABLED = process.env.AUTH_ENABLED !== 'false';
 
 const app = express();
 
@@ -83,6 +98,9 @@ if (appConfig.enableDbPoolMonitoring) {
 app.use(...loggingMiddleware);
 configureSecurity(app);
 
+// 2. Global request timeout (prevents hung Stellar/network calls)
+app.use(requestTimeout(30000));
+
 // 4. Body Parsing
 app.use(express.json({ limit: '10kb' })); // Limit body size for security
 
@@ -93,24 +111,41 @@ app.use('/api', sanitizeInput);
 app.use('/api', progressiveLimiter);
 
 // 6. Audit Context Capture (before rate limiting to capture all requests)
-app.use('/api', captureAuditContext);
+if (AUTH_ENABLED) {
+  app.use('/api', captureAuditContext);
+}
 
 // 7. Advanced rate limiting is applied by setupRateLimitRoutes(app)
 
 // 8. Audit rate limit breaches
-app.use('/api', auditRateLimit);
+if (AUTH_ENABLED) {
+  app.use('/api', auditRateLimit);
+}
 
 // 9. Error tracking for abuse detection
 app.use(abuseDetector);
 
 // 10. Setup rate limiting routes
+import { setupRateLimitRoutes } from './routes/rateLimitRoutes';
 setupRateLimitRoutes(app);
 
+// 11. Rate limiting monitoring endpoint
+app.get('/api/monitoring/rate-limit', getRateLimitStatus);
+
 // 11. Audit Routes
-app.use('/api/audit', auditRoutes);
+if (AUTH_ENABLED) {
+  app.use('/api/audit', auditRoutes);
+}
 
 // 13. Fraud detection API (ML scoring 0-100, manual review workflow, adaptive learning)
-app.use('/api/fraud', fraudRoutes);
+if (AUTH_ENABLED) {
+  app.use('/api/fraud', fraudRoutes);
+}
+
+// 13b. Webhook delivery, management, and admin dashboard API
+if (AUTH_ENABLED) {
+  app.use('/api/webhooks', webhookRoutes);
+}
 
 // 14. API Documentation
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
@@ -133,13 +168,13 @@ app.get('/health', (req, res) => {
 
 // 10. Monitoring endpoints (unversioned)
 app.get('/api/monitoring/metrics', apiKeyAuth, async (req, res) => {
-  const analytics = analyticsService.getAnalyticsData();
+  // const analytics = analyticsService.getAnalyticsData();
   const performance = performanceMonitor.getHealthStatus();
   const dbPoolMetrics = await ConnectionPoolMonitor.getAllPoolMetrics();
   const databaseHealth = await DatabaseHealthCheck.getHealthReport();
 
   res.json({
-    analytics,
+    analytics: { message: 'Analytics service temporarily disabled' },
     performance,
     requestMetrics: performanceMonitor.getRequestMetrics(100),
     customMetrics: performanceMonitor.getCustomMetrics(100),
@@ -295,7 +330,8 @@ app.get('/api/cache/performance', async (req, res) => {
   }
 });
 
-// 12. Authentication endpoints with comprehensive audit logging
+// 12. Authentication endpoints with comprehensive audit logging (Issue #407: re-enabled)
+if (AUTH_ENABLED) {
 app.post('/api/auth/register',
   authLimiter,
   auditAuth(AuditAction.USER_REGISTER),
@@ -344,21 +380,26 @@ app.delete('/api/admin/users/:id',
   auditAdmin(AuditAction.ADMIN_DELETE_USER, 'user'),
   userController.deleteUser.bind(userController)
 );
+}
 
-// 15. Payment endpoints with comprehensive audit logging
+// 15. Payment endpoints with comprehensive audit logging (Issue #407: re-enabled)
+if (AUTH_ENABLED) {
 app.post('/api/payment/process',
   ...applyPaymentSecurity,
   auditPayment(AuditAction.PAYMENT_INITIATE),
   processPayment
 );
+}
 
-// 16. Document upload with audit logging
+// 16. Document upload with audit logging (Issue #407: re-enabled)
+if (AUTH_ENABLED) {
 app.post('/api/documents/upload',
   apiKeyAuth,
   upload.single('file'),
   auditDocument(AuditAction.DOCUMENT_UPLOAD),
   uploadDocument
 );
+}
 
 app.post('/api/cache/warmup', async (req, res) => {
   try {
@@ -393,11 +434,16 @@ app.delete('/api/cache/flush', async (req, res) => {
  *       201:
  *         description: Report created
  */
-app.post('/api/analytics/reports', apiKeyAuth, generateReport);
-app.get('/api/analytics/export', apiKeyAuth, exportData);
+// Analytics routes (Issue #407: re-enabled)
+if (AUTH_ENABLED) {
+  app.post('/api/analytics/reports', apiKeyAuth, generateReport);
+  app.get('/api/analytics/export', apiKeyAuth, exportData);
+}
 
-// 17. Export endpoints
-app.use('/api/export', exportRoutes);
+// 17. Export endpoints (Issue #407: re-enabled)
+if (AUTH_ENABLED) {
+  app.use('/api/export', exportRoutes);
+}
 
 // 18. Centralized Error Handling endpoints
 app.get('/api/errors/stats', apiKeyAuth, (req, res) => {
@@ -409,14 +455,22 @@ app.get('/api/errors/logs', apiKeyAuth, (req, res) => {
   res.json({ success: true, data: getErrorLogs(parseInt(limit.toString())) });
 });
 
+
+// Work #120 - Scheduled Payment Routes
+app.use('/api/scheduled-payments', scheduledPaymentRoutes);
+
+// Start the scheduled payment cron job
+scheduledPaymentService.startScheduler();
+
+// Nothing else in the app imports webhookQueueService — without this,
+// its interval (which now drives all webhook retry delivery via
+// WebhookService.processPendingRetries) would never start.
+void webhookQueueService;
+
 // Setup global error handling
 setupGlobalErrorHandling(app);
 
 // 19. Centralized error handler as fallback
 app.use(errorHandler);
-
-export default app;
-// Setup global error handling
-setupGlobalErrorHandling(app);
 
 export default app;

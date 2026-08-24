@@ -17,7 +17,12 @@ import {
   ipBasedRateLimiter,
   progressiveRateLimiter,
   rateLimitBreachMonitor,
-  getRateLimitAnalytics as getComprehensiveAnalytics
+  getRateLimitAnalytics as getComprehensiveAnalytics,
+  scheduledPaymentLimiter,
+  webhookLimiter,
+  fileUploadLimiter,
+  exportLimiter,
+  downloadLimiter
 } from '../middleware/comprehensiveRateLimiter';
 import { 
   getRateLimitAnalytics,
@@ -59,6 +64,11 @@ export function setupRateLimitRoutes(app: any) {
   // Apply specific rate limiters to endpoints
   app.use('/api/auth', authEndpointLimiter);
   app.use('/api/payment', paymentEndpointLimiter);
+  app.use('/api/scheduled-payments', scheduledPaymentLimiter);
+  app.use('/api/webhook', webhookLimiter);
+  app.use('/api/documents/upload', fileUploadLimiter);
+  app.use('/api/export', exportLimiter);
+  app.use('/api/export/download', downloadLimiter);
   app.use('/api', strictApiLimiter);
 
   // Rate limiting analytics endpoints
@@ -102,11 +112,11 @@ export function setupRateLimitRoutes(app: any) {
   app.get('/api/rate-limit/breach-history', authenticate, getBreachHistoryController);
 
   // Role-specific rate limiting examples
-  app.get('/api/admin/protected', authenticate, roleBasedRateLimiter(UserRole.ADMIN), (req, res) => {
+  app.get('/api/admin/protected', authenticate, roleBasedRateLimiter(UserRole.ADMIN), (req: any, res: any) => {
     res.json({ message: 'Admin-only endpoint with role-based rate limiting' });
   });
 
-  app.get('/api/premium/feature', authenticate, roleBasedRateLimiter(), (req, res) => {
+  app.get('/api/premium/feature', authenticate, roleBasedRateLimiter(), (req: any, res: any) => {
     res.json({ message: 'Premium feature with enhanced rate limiting' });
   });
 }

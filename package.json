@@ -1,15 +1,20 @@
 {
   "name": "nepa-monorepo",
   "version": "1.0.0",
-  "description": "NEPA Monorepo - Backend services",
+  "description": "NEPA - Decentralized utility payment platform powered by Stellar blockchain",
   "private": true,
   "workspaces": [
-    "backend"
+    "backend",
+    "frontend",
+    "contract"
   ],
   "scripts": {
-    "test": "cd backend && npm test",
-    "lint": "cd backend && npm run lint",
-    "build": "cd backend && npm run build",
-    "dev": "cd backend && npm run dev"
+    "test": "npm run test --workspaces",
+    "lint": "npm run lint --workspaces",
+    "build": "npm run build --workspaces",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "type-check": "npm run type-check --workspaces"
   }
 }
+

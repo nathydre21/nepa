@@ -104,7 +104,7 @@ export class AdvancedRateLimitService {
 
     // Apply role-based multipliers
     const userRole = (req as any).user?.role || UserRole.USER;
-    const roleMultiplier = ROLE_BASED_MULTIPLIERS[userRole] || 1.0;
+    const roleMultiplier = ROLE_BASED_MULTIPLIERS[userRole as UserRole] || 1.0;
     
     // Apply HTTP method multipliers
     const methodMultiplier = HTTP_METHOD_MULTIPLIERS[req.method] || 1.0;

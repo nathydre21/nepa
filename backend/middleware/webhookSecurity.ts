@@ -3,16 +3,41 @@ import * as crypto from 'crypto';
 import { logger } from '../logger';
 
 /**
- * Middleware to verify webhook payload signature
- * This is used when receiving webhook events from external services
+ * SECURITY (Issue #415): Maximum allowed age of a webhook request in seconds.
+ * Requests with timestamps older than this are rejected to prevent replay attacks.
  */
-export const verifyWebhookSignature = (req: Request, res: Response, next: NextFunction): void => {
+const MAX_WEBHOOK_AGE_SECONDS = 300; // 5 minutes
+
+/**
+ * SECURITY (Issue #415): Middleware to verify webhook payload signature.
+ *
+ * This middleware performs full signature verification on incoming webhook requests:
+ *   1. Extracts the signature and webhook ID from request headers
+ *   2. Loads the webhook's stored signing secret from the database
+ *   3. Recomputes the HMAC-SHA256 of the raw request body
+ *   4. Compares the computed signature with the provided one using a
+ *      constant-time comparison (crypto.timingSafeEqual) to prevent timing attacks
+ *   5. Validates the request timestamp to prevent replay attacks
+ *   6. Logs all verification failures for security monitoring
+ *
+ * Required headers:
+ *   - x-webhook-signature: HMAC-SHA256 signature of the raw request body
+ *   - x-webhook-id: The webhook's unique identifier
+ *   - x-webhook-timestamp: Unix timestamp (seconds) of when the request was sent
+ *
+ * @param req Express request object
+ * @param res Express response object
+ * @param next Express next function
+ */
+export const verifyWebhookSignature = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const signature = req.headers['x-webhook-signature'] as string;
     const webhookId = req.headers['x-webhook-id'] as string;
+    const timestamp = req.headers['x-webhook-timestamp'] as string;
 
+    // --- Step 1: Validate required headers are present ---
     if (!signature || !webhookId) {
-      logger.warn('Missing webhook signature or ID');
+      logger.warn(`[SECURITY] Webhook request missing signature or webhook ID header. IP: ${req.ip}`);
       res.status(401).json({
         success: false,
         error: 'Missing webhook signature or ID',
@@ -20,9 +45,126 @@ export const verifyWebhookSignature = (req: Request, res: Response, next: NextFu
       return;
     }
 
-    // Store for later use
-    (req as any).webhookSignature = signature;
+    // --- Step 2: Validate timestamp to prevent replay attacks ---
+    // The timestamp header must be present and within the allowed time window.
+    // Without this, an attacker who captures a legitimate webhook request
+    // could replay it indefinitely.
+    if (!timestamp) {
+      logger.warn(`[SECURITY] Webhook ${webhookId} missing timestamp header. IP: ${req.ip}`);
+      res.status(401).json({
+        success: false,
+        error: 'Missing webhook timestamp. Include x-webhook-timestamp header to prevent replay attacks.',
+      });
+      return;
+    }
+
+    const requestTime = parseInt(timestamp, 10);
+    if (isNaN(requestTime)) {
+      logger.warn(`[SECURITY] Webhook ${webhookId} has invalid timestamp: ${timestamp}. IP: ${req.ip}`);
+      res.status(400).json({
+        success: false,
+        error: 'Invalid timestamp format',
+      });
+      return;
+    }
+
+    const currentTime = Math.floor(Date.now() / 1000);
+    const ageInSeconds = Math.abs(currentTime - requestTime);
+
+    if (ageInSeconds > MAX_WEBHOOK_AGE_SECONDS) {
+      logger.warn(`[SECURITY] Webhook ${webhookId} rejected — timestamp too old (${ageInSeconds}s). IP: ${req.ip}`);
+      res.status(401).json({
+        success: false,
+        error: `Webhook timestamp is too old. Maximum allowed age is ${MAX_WEBHOOK_AGE_SECONDS} seconds.`,
+      });
+      return;
+    }
+
+    // --- Step 3: Load the webhook's signing secret from the database ---
+    // We need the raw body for signature verification, not the parsed JSON.
+    // Express may have already parsed req.body as JSON, so we reconstruct
+    // the raw body string for HMAC computation.
+    const rawBody = JSON.stringify(req.body);
+
+    // Import prisma lazily to avoid circular dependencies at module load time
+    const prisma = (await import('../prismaClient')).default;
+
+    const webhook = await prisma.webhook.findUnique({
+      where: { id: webhookId },
+      select: { id: true, secret: true, isActive: true, userId: true },
+    });
+
+    if (!webhook) {
+      logger.warn(`[SECURITY] Webhook ${webhookId} not found. IP: ${req.ip}`);
+      res.status(404).json({
+        success: false,
+        error: 'Webhook not found',
+      });
+      return;
+    }
+
+    if (!webhook.isActive) {
+      logger.warn(`[SECURITY] Webhook ${webhookId} is inactive. IP: ${req.ip}`);
+      res.status(403).json({
+        success: false,
+        error: 'Webhook is inactive',
+      });
+      return;
+    }
+
+    if (!webhook.secret) {
+      logger.error(`[SECURITY] Webhook ${webhookId} has no signing secret configured. This is a configuration error.`);
+      res.status(500).json({
+        success: false,
+        error: 'Webhook signing secret is not configured',
+      });
+      return;
+    }
+
+    // --- Step 4: Compute the expected HMAC-SHA256 signature ---
+    // The signature is computed over the timestamp + raw body to bind the
+    // timestamp to the payload (preventing an attacker from swapping timestamps).
+    const signedPayload = `${timestamp}.${rawBody}`;
+    const expectedSignature = crypto
+      .createHmac('sha256', webhook.secret)
+      .update(signedPayload)
+      .digest('hex');
+
+    // --- Step 5: Compare signatures using constant-time comparison ---
+    // Using crypto.timingSafeEqual prevents timing attacks where an attacker
+    // could determine the correct signature byte-by-byte by measuring
+    // response times. We must ensure both buffers are the same length
+    // before calling timingSafeEqual, otherwise it throws an error.
+    const providedSignatureBuffer = Buffer.from(signature, 'hex');
+    const expectedSignatureBuffer = Buffer.from(expectedSignature, 'hex');
+
+    let signaturesMatch: boolean;
+    if (providedSignatureBuffer.length !== expectedSignatureBuffer.length) {
+      // Length mismatch — signatures definitely don't match
+      signaturesMatch = false;
+    } else {
+      // Lengths match — use constant-time comparison
+      signaturesMatch = crypto.timingSafeEqual(providedSignatureBuffer, expectedSignatureBuffer);
+    }
+
+    if (!signaturesMatch) {
+      // SECURITY: Log the failure with details for security monitoring.
+      // Do NOT include the expected signature in logs — only the fact that it failed.
+      logger.warn(`[SECURITY] Invalid webhook signature for webhook ${webhookId}. IP: ${req.ip}`);
+      res.status(401).json({
+        success: false,
+        error: 'Invalid webhook signature',
+      });
+      return;
+    }
+
+    // --- Step 6: Signature verified — attach webhook context and proceed ---
+    logger.info(`Webhook signature verified for webhook ${webhookId}. IP: ${req.ip}`);
+
+    // Attach verified webhook context for downstream handlers
     (req as any).webhookId = webhookId;
+    (req as any).webhookUserId = webhook.userId;
+    (req as any).webhookVerified = true;
 
     next();
   } catch (error) {
@@ -35,17 +177,41 @@ export const verifyWebhookSignature = (req: Request, res: Response, next: NextFu
 };
 
 /**
- * Middleware to validate webhook payload against signature
+ * SECURITY (Issue #415): Middleware to validate webhook payload against signature.
+ *
+ * This is a secondary validation step that can be used with a pre-shared secret
+ * for scenarios where the webhook ID lookup has already been performed.
+ * It uses crypto.timingSafeEqual for constant-time comparison to prevent
+ * timing attacks.
+ *
+ * @param secret The webhook's signing secret
  */
 export const validateWebhookPayload = (secret: string) => {
   return (req: Request, res: Response, next: NextFunction): void => {
     try {
       const signature = (req as any).webhookSignature;
-      const payload = JSON.stringify(req.body);
+      const timestamp = req.headers['x-webhook-timestamp'] as string;
+      const rawBody = JSON.stringify(req.body);
 
-      const expectedSignature = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+      // Compute signature over timestamp + body (same format as verifyWebhookSignature)
+      const signedPayload = `${timestamp}.${rawBody}`;
+      const expectedSignature = crypto
+        .createHmac('sha256', secret)
+        .update(signedPayload)
+        .digest('hex');
 
-      if (signature !== expectedSignature) {
+      // Use constant-time comparison to prevent timing attacks
+      const providedBuffer = Buffer.from(signature, 'hex');
+      const expectedBuffer = Buffer.from(expectedSignature, 'hex');
+
+      let isValid: boolean;
+      if (providedBuffer.length !== expectedBuffer.length) {
+        isValid = false;
+      } else {
+        isValid = crypto.timingSafeEqual(providedBuffer, expectedBuffer);
+      }
+
+      if (!isValid) {
         logger.warn(`Invalid webhook signature for webhook ${(req as any).webhookId}`);
         res.status(401).json({
           success: false,

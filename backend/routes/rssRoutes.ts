@@ -6,8 +6,11 @@ import {
   getActivityFeed,
   getUserActivityFeed
 } from '../controllers/RssController';
+import { sanitizeInput } from '../middleware/inputSanitization';
 
 const router = Router();
+
+router.use(sanitizeInput);
 
 /**
  * @openapi

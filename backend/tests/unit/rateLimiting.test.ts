@@ -5,6 +5,7 @@ import { AdvancedRateLimitService } from '../services/AdvancedRateLimitService';
 
 /**
  * Unit Tests for Rate Limiting Services
+ * Issue #269: Fix Missing API Rate Limiting
  * Run with: npm test -- tests/unit/rateLimiting.test.ts
  */
 

@@ -12,6 +12,7 @@ const TreeViewPage = lazy(() => import('../pages/TreeViewPage'));
 const AuthPage = lazy(() => import('../pages/AuthPage'));
 const ProfilePage = lazy(() => import('../pages/ProfilePage'));
 const TransactionHistoryPage = lazy(() => import('../pages/TransactionHistoryPage'));
+const WebhookAdminPage = lazy(() => import('../pages/WebhookAdminPage'));
 const FAQPage = lazy(() => import('../pages/FAQpage'));
 const NotFoundPage = lazy(() => import('../pages/NotFoundPage'));
 
@@ -93,17 +94,27 @@ const AppRoutes: React.FC = () => {
             </Suspense>
           } 
         />
-        <Route 
-          path="/transactions" 
+        <Route
+          path="/transactions"
           element={
             <Suspense fallback={<RouteLoadingFallback />}>
               <ProtectedRoute>
                 <TransactionHistoryPage />
               </ProtectedRoute>
             </Suspense>
-          } 
+          }
         />
-        
+        <Route
+          path="/admin/webhooks"
+          element={
+            <Suspense fallback={<RouteLoadingFallback />}>
+              <ProtectedRoute requiredRole="ADMIN">
+                <WebhookAdminPage />
+              </ProtectedRoute>
+            </Suspense>
+          }
+        />
+
         {/* 404 catch-all route */}
         <Route 
           path="*" 

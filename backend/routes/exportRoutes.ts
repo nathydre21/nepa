@@ -9,8 +9,11 @@ import {
 } from '../controllers/ExportController';
 import { apiKeyAuth } from '../src/config/auth';
 import { auditAdmin } from '../middleware/audit';
+import { sanitizeInput } from '../middleware/inputSanitization';
 
 const router = Router();
+
+router.use(sanitizeInput);
 
 /**
  * Export routes for data export functionality

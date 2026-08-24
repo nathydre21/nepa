@@ -8,6 +8,7 @@ import { getCacheInitializer } from '../services/cache/CacheInitializer';
 import { getCacheManager } from '../services/RedisCacheManager';
 import { authenticate, authorize } from '../middleware/authentication';
 import { logger } from '../services/logger';
+import { sanitizeInput } from '../middleware/inputSanitization';
 
 const router = Router();
 
@@ -18,6 +19,7 @@ const router = Router();
 // Middleware to ensure only admins can access cache management
 router.use(authenticate);
 router.use(authorize(['ADMIN', 'SUPER_ADMIN']));
+router.use(sanitizeInput);
 
 /**
  * GET /api/cache/health

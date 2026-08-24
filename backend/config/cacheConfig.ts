@@ -255,7 +255,7 @@ export const environmentConfigs = {
  */
 export function getCacheConfig(): ComprehensiveCacheConfig {
   const env = process.env.NODE_ENV || 'development';
-  return environmentConfigs[env] || environmentConfigs.development;
+  return environmentConfigs[env as keyof typeof environmentConfigs] || environmentConfigs.development;
 }
 
 /**

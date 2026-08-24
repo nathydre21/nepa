@@ -2,38 +2,46 @@ import '@testing-library/jest-dom';
 import { PrismaClient } from '@prisma/client';
 
 let prisma: PrismaClient;
+let dbAvailable = false;
 
 beforeAll(async () => {
-  // Initialize test database connection
-  prisma = new PrismaClient({
-    datasources: {
-      db: {
-        url: process.env.DATABASE_URL || 'postgresql://test:test@localhost:5432/nepa_test'
+  try {
+    prisma = new PrismaClient({
+      datasources: {
+        db: {
+          url: process.env.DATABASE_URL || 'postgresql://test:test@localhost:5432/nepa_test'
+        }
       }
-    }
-  });
-
-  // Connect to test database
-  await prisma.$connect();
+    });
+    await prisma.$connect();
+    dbAvailable = true;
+  } catch {
+    // No database available - unit tests will still run
+    dbAvailable = false;
+  }
 });
 
 afterAll(async () => {
-  // Clean up test database connection
-  await prisma.$disconnect();
+  if (dbAvailable && prisma) {
+    await prisma.$disconnect();
+  }
 });
 
 beforeEach(async () => {
-  // Clean up database before each test
-  const tablenames = await prisma.$queryRaw`SELECT tablename FROM pg_tables WHERE schemaname='public'`;
-  
-  for (const { tablename } of tablenames) {
-    if (tablename !== '_prisma_migrations') {
-      try {
-        await prisma.$executeRaw`TRUNCATE TABLE "public".${tablename} CASCADE;`;
-      } catch (error) {
-        console.log(`Warning: Could not truncate table ${tablename}`);
+  if (!dbAvailable || !prisma) return;
+  try {
+    const tablenames = await prisma.$queryRaw<Array<{ tablename: string }>>`SELECT tablename FROM pg_tables WHERE schemaname='public'`;
+    for (const { tablename } of tablenames) {
+      if (tablename !== '_prisma_migrations') {
+        try {
+          await prisma.$executeRawUnsafe(`TRUNCATE TABLE "public"."${tablename}" CASCADE;`);
+        } catch {
+          // ignore truncation errors
+        }
       }
     }
+  } catch {
+    // ignore
   }
 });
 
@@ -48,5 +56,4 @@ jest.mock('react-i18next', () => ({
   }),
 }));
 
-// Export prisma for use in tests
 export { prisma };

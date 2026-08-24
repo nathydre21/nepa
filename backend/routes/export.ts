@@ -8,33 +8,14 @@ import {
   getExportTemplates
 } from '../controllers/ExportController';
 import { authenticateToken } from '../middleware/auth';
-import { rateLimit } from 'express-rate-limit';
+import { exportLimiter, downloadLimiter } from '../middleware/comprehensiveRateLimiter';
+import { sanitizeInput } from '../middleware/inputSanitization';
 
 const router = Router();
 
-// Rate limiting for export endpoints
-const exportLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // Limit each IP to 10 export requests per window
-  message: {
-    error: 'Too many export requests, please try again later'
-  },
-  standardHeaders: true,
-  legacyHeaders: false
-});
-
-const downloadLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 50, // Limit each IP to 50 download requests per window
-  message: {
-    error: 'Too many download requests, please try again later'
-  },
-  standardHeaders: true,
-  legacyHeaders: false
-});
-
 // Apply authentication to all export routes
 router.use(authenticateToken);
+router.use(sanitizeInput);
 
 // Export routes
 router.post('/', exportLimiter, startExport);

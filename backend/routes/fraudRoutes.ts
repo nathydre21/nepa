@@ -14,10 +14,12 @@ import {
   getFraudAlerts,
   acknowledgeFraudAlert,
 } from '../src/fraud/FraudDetectionController';
+import { sanitizeInput } from '../middleware/inputSanitization';
 
 const router = Router();
 
 router.use(apiKeyAuth);
+router.use(sanitizeInput);
 
 // Real-time fraud scoring (0-100) and pattern analysis
 router.post('/detect', detectFraud);

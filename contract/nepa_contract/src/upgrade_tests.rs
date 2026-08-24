@@ -1,14 +1,12 @@
-use soroban_sdk::{Address, Env, Symbol};
 use crate::{
-    upgrade_proxy::UpgradeProxy,
-    version_manager::{VersionManager, ContractVersion},
-    data_migration::DataMigration,
-    testutils::{Address as _,},
+    data_migration::DataMigration, upgrade_proxy::UpgradeProxy, version_manager::VersionManager,
 };
+use soroban_sdk::{Address, Env, Symbol};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soroban_sdk::{symbol_short, testutils::Address as _};
 
     fn create_test_env() -> Env {
         Env::default()
@@ -37,16 +35,15 @@ mod tests {
 
         UpgradeProxy::initialize(env.clone(), admin.clone());
 
-        let result = UpgradeProxy::upgrade(
-            env.clone(),
-            admin.clone(),
-            new_implementation.clone(),
-            2,
-        );
+        let result =
+            UpgradeProxy::upgrade(env.clone(), admin.clone(), new_implementation.clone(), 2);
 
         assert!(result.is_ok());
         assert_eq!(UpgradeProxy::get_version(env.clone()), 2);
-        assert_eq!(UpgradeProxy::get_implementation(env.clone()), new_implementation);
+        assert_eq!(
+            UpgradeProxy::get_implementation(env.clone()),
+            new_implementation
+        );
     }
 
     #[test]
@@ -58,15 +55,10 @@ mod tests {
 
         UpgradeProxy::initialize(env.clone(), admin);
 
-        let result = UpgradeProxy::upgrade(
-            env.clone(),
-            unauthorized,
-            new_implementation,
-            2,
-        );
+        let result = UpgradeProxy::upgrade(env.clone(), unauthorized, new_implementation, 2);
 
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), Symbol::short("UNAUTHORIZED"));
+        assert_eq!(result.unwrap_err(), symbol_short!("UNAUTH"));
     }
 
     #[test]
@@ -100,7 +92,7 @@ mod tests {
 
         let version_info = VersionManager::get_version_info(env.clone(), 2);
         assert!(version_info.is_some());
-        
+
         let info = version_info.unwrap();
         assert_eq!(info.version, 2);
         assert_eq!(info.implementation_address, implementation);
@@ -125,7 +117,8 @@ mod tests {
             implementation1.clone(),
             false,
             true,
-        ).unwrap();
+        )
+        .unwrap();
 
         VersionManager::register_version(
             env.clone(),
@@ -134,7 +127,8 @@ mod tests {
             implementation2.clone(),
             true,
             false,
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(VersionManager::get_latest_version(env.clone()), Some(3));
     }
@@ -156,7 +150,8 @@ mod tests {
             implementation1.clone(),
             false,
             true,
-        ).unwrap();
+        )
+        .unwrap();
 
         // Register non-backward compatible version
         VersionManager::register_version(
@@ -166,7 +161,8 @@ mod tests {
             implementation2.clone(),
             true,
             false,
-        ).unwrap();
+        )
+        .unwrap();
 
         // Test safe upgrade (backward compatible)
         let is_safe = VersionManager::is_upgrade_safe(env.clone(), 1, 1);
@@ -193,7 +189,7 @@ mod tests {
     fn test_data_migration_register_script() {
         let env = create_test_env();
         let admin = create_test_admin(&env);
-        let script_hash = [1u8; 32];
+        let script_hash = soroban_sdk::BytesN::from_array(&env, &[1u8; 32]);
 
         DataMigration::initialize(env.clone(), admin.clone());
 
@@ -202,27 +198,27 @@ mod tests {
             admin.clone(),
             1,
             2,
-            script_hash,
-            Symbol::short("TEST_MIGRATION"),
+            script_hash.clone(),
+            Symbol::new(&env, "TEST_MIGRATION"),
         );
 
         assert!(result.is_ok());
 
         let migrations = DataMigration::get_migration_scripts(env.clone(), 2);
         assert!(!migrations.is_empty());
-        
+
         let migration = migrations.get(0).unwrap();
         assert_eq!(migration.from_version, 1);
         assert_eq!(migration.to_version, 2);
         assert_eq!(migration.script_hash, script_hash);
-        assert_eq!(migration.description, Symbol::short("TEST_MIGRATION"));
+        assert_eq!(migration.description, Symbol::new(&env, "TEST_MIGRATION"));
     }
 
     #[test]
     fn test_data_migration_execute() {
         let env = create_test_env();
         let admin = create_test_admin(&env);
-        let script_hash = [1u8; 32];
+        let script_hash = soroban_sdk::BytesN::from_array(&env, &[1u8; 32]);
 
         DataMigration::initialize(env.clone(), admin.clone());
 
@@ -233,16 +229,12 @@ mod tests {
             1,
             2,
             script_hash,
-            Symbol::short("TEST_MIGRATION"),
-        ).unwrap();
+            Symbol::new(&env, "TEST_MIGRATION"),
+        )
+        .unwrap();
 
         // Execute migration
-        let result = DataMigration::execute_migration(
-            env.clone(),
-            admin.clone(),
-            1,
-            2,
-        );
+        let result = DataMigration::execute_migration(env.clone(), admin.clone(), 1, 2);
 
         assert!(result.is_ok());
     }
@@ -268,7 +260,7 @@ mod tests {
 
         let result = DataMigration::backup_data(env.clone(), unauthorized);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), Symbol::short("UNAUTHORIZED"));
+        assert_eq!(result.unwrap_err(), symbol_short!("UNAUTH"));
     }
 
     #[test]
@@ -277,7 +269,7 @@ mod tests {
         let admin = create_test_admin(&env);
         let old_implementation = Address::generate(&env);
         let new_implementation = Address::generate(&env);
-        let script_hash = [1u8; 32];
+        let script_hash = soroban_sdk::BytesN::from_array(&env, &[1u8; 32]);
 
         // Initialize all systems
         UpgradeProxy::initialize(env.clone(), admin.clone());
@@ -292,7 +284,8 @@ mod tests {
             new_implementation.clone(),
             true,
             true,
-        ).unwrap();
+        )
+        .unwrap();
 
         // Register migration script
         DataMigration::register_migration_script(
@@ -301,41 +294,31 @@ mod tests {
             1,
             2,
             script_hash,
-            Symbol::short("INTEGRATION_TEST"),
-        ).unwrap();
+            Symbol::new(&env, "INTEGRATION_TEST"),
+        )
+        .unwrap();
 
         // Set initial implementation
-        UpgradeProxy::upgrade(
-            env.clone(),
-            admin.clone(),
-            old_implementation.clone(),
-            1,
-        ).unwrap();
+        UpgradeProxy::upgrade(env.clone(), admin.clone(), old_implementation.clone(), 1).unwrap();
 
         // Backup data
         DataMigration::backup_data(env.clone(), admin.clone()).unwrap();
 
         // Perform upgrade
-        let upgrade_result = UpgradeProxy::upgrade(
-            env.clone(),
-            admin.clone(),
-            new_implementation.clone(),
-            2,
-        );
+        let upgrade_result =
+            UpgradeProxy::upgrade(env.clone(), admin.clone(), new_implementation.clone(), 2);
         assert!(upgrade_result.is_ok());
 
         // Execute migration
-        let migration_result = DataMigration::execute_migration(
-            env.clone(),
-            admin.clone(),
-            1,
-            2,
-        );
+        let migration_result = DataMigration::execute_migration(env.clone(), admin.clone(), 1, 2);
         assert!(migration_result.is_ok());
 
         // Verify final state
         assert_eq!(UpgradeProxy::get_version(env.clone()), 2);
-        assert_eq!(UpgradeProxy::get_implementation(env.clone()), new_implementation);
+        assert_eq!(
+            UpgradeProxy::get_implementation(env.clone()),
+            new_implementation
+        );
     }
 
     #[test]
@@ -351,7 +334,7 @@ mod tests {
 
         let upgrade_result = UpgradeProxy::upgrade(
             env.clone(),
-            unauthorized,
+            unauthorized.clone(),
             Address::generate(&env),
             2,
         );
@@ -359,7 +342,7 @@ mod tests {
 
         let version_result = VersionManager::register_version(
             env.clone(),
-            unauthorized,
+            unauthorized.clone(),
             2,
             Address::generate(&env),
             true,
@@ -372,8 +355,8 @@ mod tests {
             unauthorized,
             1,
             2,
-            [1u8; 32],
-            Symbol::short("TEST"),
+            soroban_sdk::BytesN::from_array(&env, &[1u8; 32]),
+            symbol_short!("TEST"),
         );
         assert!(migration_result.is_err());
     }

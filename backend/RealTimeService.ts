@@ -4,10 +4,16 @@
  *
  * All emission goes through the SocketServer singleton so there is always a
  * single Socket.IO Server instance in the process.
+ *
+ * Note: Reconnection logic is handled on the client-side in useSocket.ts.
+ * This service focuses on sending notifications from the server to clients.
  */
 
 import { SocketServer, SERVER_EVENTS, ROOMS } from './SocketServer';
 
+/**
+ * Enumeration of all possible notification types sent via real-time updates
+ */
 export enum NotificationType {
   PAYMENT_SUCCESS = 'PAYMENT_SUCCESS',
   PAYMENT_FAILED = 'PAYMENT_FAILED',
@@ -16,6 +22,9 @@ export enum NotificationType {
   SYSTEM_ALERT = 'SYSTEM_ALERT',
 }
 
+/**
+ * Interface for a standard notification payload sent to clients
+ */
 export interface NotificationPayload {
   type: NotificationType;
   title: string;
@@ -27,6 +36,11 @@ export interface NotificationPayload {
 export class RealTimeService {
   /**
    * Send a typed notification to a specific user's private room.
+   * Emits both a generic 'notification' event and a type-specific event for selective listening.
+   *
+   * @param userId - ID of the user to send the notification to
+   * @param type - Type of notification being sent
+   * @param data - Additional data to include with the notification
    */
   static sendUserUpdate(userId: string, type: NotificationType, data: unknown): void {
     try {
@@ -54,6 +68,9 @@ export class RealTimeService {
 
   /**
    * Broadcast a message to every connected authenticated user.
+   *
+   * @param type - Type of notification being broadcast
+   * @param data - Additional data to include with the broadcast
    */
   static broadcast(type: NotificationType, data: unknown): void {
     try {
@@ -70,6 +87,9 @@ export class RealTimeService {
   /**
    * Send a system-wide alert to the notifications room.
    * All users who have subscribed to `room_notifications` will receive it.
+   *
+   * @param message - The alert message to send
+   * @param data - Optional additional data to include
    */
   static sendSystemAlert(message: string, data?: unknown): void {
     try {
@@ -85,8 +105,14 @@ export class RealTimeService {
     }
   }
 
-  // ─── Private helpers ───────────────────────────────────────────────────────
+  // ─── Private helpers ─────────────────────────────────────────────────────
 
+  /**
+   * Get a human-readable title for a given notification type
+   *
+   * @param type - The notification type
+   * @returns The corresponding title string
+   */
   private static getTitleForType(type: NotificationType): string {
     switch (type) {
       case NotificationType.PAYMENT_SUCCESS: return 'Payment Successful';
@@ -98,6 +124,13 @@ export class RealTimeService {
     }
   }
 
+  /**
+   * Get a formatted message for a given notification type and data
+   *
+   * @param type - The notification type
+   * @param data - Data associated with the notification
+   * @returns The corresponding message string
+   */
   private static getMessageForType(type: NotificationType, data: any): string {
     switch (type) {
       case NotificationType.PAYMENT_SUCCESS:

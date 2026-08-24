@@ -1,7 +1,7 @@
 import * as crypto from 'crypto';
 import axios, { AxiosError } from 'axios';
 import { logger } from './logger';
-import prisma from './prismaClient';
+import prisma from '../src/config/prismaClient';
 
 export interface WebhookPayload {
   eventType: string;
@@ -46,7 +46,9 @@ interface WebhookEvent {
   updatedAt: Date;
 }
 
-class WebhookService {
+export class WebhookService {
+  private isProcessingRetries = false;
+
   /**
    * Generate HMAC signature for webhook payload
    */
@@ -146,7 +148,11 @@ class WebhookService {
   ): Promise<Webhook> {
     try {
       if (updates.url) {
-        new URL(updates.url);
+        try {
+          new URL(updates.url);
+        } catch {
+          throw new Error('Invalid webhook URL');
+        }
       }
 
       const webhook = await prisma.webhook.update({
@@ -236,10 +242,6 @@ class WebhookService {
    */
   private async deliverWebhookEvent(webhook: Webhook, payload: WebhookPayload): Promise<void> {
     try {
-      // Create event record
-      const payloadString = JSON.stringify(payload);
-      const signature = WebhookService.generateSignature(payloadString, webhook.secret);
-
       const event = await prisma.webhookEvent.create({
         data: {
           webhookId: webhook.id,
@@ -251,7 +253,7 @@ class WebhookService {
       });
 
       // Attempt delivery
-      await this.attemptWebhookDelivery(webhook, event, payload, signature, 0);
+      await this.attemptWebhookDelivery(webhook, event, payload, 0);
     } catch (error) {
       logger.error(`Failed to deliver webhook event for webhook ${webhook.id}: ${error}`);
     }
@@ -264,14 +266,26 @@ class WebhookService {
     webhook: Webhook,
     event: WebhookEvent,
     payload: WebhookPayload,
-    signature: string,
     attemptNumber: number
   ): Promise<void> {
     try {
       const payloadString = JSON.stringify(payload);
+
+      // Bind the timestamp into the signed string (matching the contract
+      // documented in registerWebhook's response and the convention
+      // middleware/webhookSecurity.ts already uses to verify *inbound*
+      // signatures) so a receiver can enforce a replay window. Computed
+      // fresh per attempt, not once at event-creation time — retries can
+      // now happen up to an hour later (see calculateRetryDelay's cap), so
+      // a signature computed at attempt 0 would otherwise sign a
+      // timestamp that's long since expired by the time a retry fires.
+      const timestamp = Math.floor(Date.now() / 1000);
+      const signature = WebhookService.generateSignature(`${timestamp}.${payloadString}`, webhook.secret);
+
       const headers: { [key: string]: string } = {
         'Content-Type': 'application/json',
         'X-Webhook-Signature': signature,
+        'X-Webhook-Timestamp': String(timestamp),
         'X-Webhook-ID': webhook.id,
         'X-Event-Type': payload.eventType,
         'X-Delivery-ID': event.id,
@@ -344,12 +358,17 @@ class WebhookService {
             },
           });
 
-          // Schedule retry
-          setTimeout(() => {
-            this.attemptWebhookDelivery(webhook, event, payload, signature, attemptNumber + 1);
-          }, nextRetryDelay * 1000);
-
-          logger.info(`Webhook delivery failed. Retry scheduled for event ${event.id} in ${nextRetryDelay}s`);
+          // No in-process timer here: an in-process setTimeout doesn't
+          // survive a restart, silently dropping the retry. nextRetry is
+          // persisted instead, and WebhookQueueService's interval drains
+          // due events via processPendingRetries() below.
+          await this.logWebhookAction(
+            webhook.id,
+            'RETRY_SCHEDULED',
+            `Event ${payload.eventType} delivery failed on attempt ${attemptNumber + 1}, retry due in ${nextRetryDelay}s`,
+            'FAILURE'
+          );
+          logger.info(`Webhook delivery failed. Retry due for event ${event.id} in ${nextRetryDelay}s`);
         } else {
           // Max retries exceeded
           await prisma.webhookEvent.update({
@@ -361,7 +380,12 @@ class WebhookService {
             },
           });
 
-          await this.logWebhookAction(webhook.id, 'FAILED', `Event ${payload.eventType} failed after ${attemptNumber + 1} attempts`);
+          await this.logWebhookAction(
+            webhook.id,
+            'FAILED',
+            `Event ${payload.eventType} failed after ${attemptNumber + 1} attempts`,
+            'FAILURE'
+          );
           logger.error(`Webhook delivery failed permanently for event ${event.id} after ${attemptNumber + 1} attempts`);
         }
       }
@@ -371,21 +395,92 @@ class WebhookService {
   }
 
   /**
-   * Calculate retry delay based on policy
+   * Maximum retry delay, regardless of policy or attempt count. Without
+   * this, EXPONENTIAL backoff is unbounded (baseDelay * 2^attempt) and can
+   * reach multi-hour delays after a handful of failures.
+   */
+  private static readonly MAX_RETRY_DELAY_SECONDS = 3600; // 1 hour
+
+  /**
+   * Calculate retry delay based on policy, capped and jittered.
+   *
+   * Jitter uses the "equal jitter" pattern (delay in [capped/2, capped])
+   * rather than full jitter (delay in [0, capped]): it still spreads out
+   * retries to avoid a thundering herd when many events fail at once, but
+   * never lets the delay collapse toward zero the way full jitter can.
    */
   private calculateRetryDelay(
     policy: 'EXPONENTIAL' | 'LINEAR' | 'FIXED',
     attemptNumber: number,
     baseDelay: number
   ): number {
+    let delay: number;
     switch (policy) {
       case 'EXPONENTIAL':
-        return baseDelay * Math.pow(2, attemptNumber);
+        delay = baseDelay * Math.pow(2, attemptNumber);
+        break;
       case 'LINEAR':
-        return baseDelay * (attemptNumber + 1);
+        delay = baseDelay * (attemptNumber + 1);
+        break;
       case 'FIXED':
       default:
-        return baseDelay;
+        delay = baseDelay;
+        break;
+    }
+
+    const capped = Math.min(delay, WebhookService.MAX_RETRY_DELAY_SECONDS);
+    return capped / 2 + Math.random() * (capped / 2);
+  }
+
+  /**
+   * Resume delivery for WebhookEvents whose scheduled retry time has
+   * passed. This is what actually executes retries now that
+   * attemptWebhookDelivery only persists nextRetry instead of scheduling
+   * an in-process timer — called on an interval by WebhookQueueService.
+   */
+  async processPendingRetries(): Promise<void> {
+    if (this.isProcessingRetries) {
+      return; // previous batch still running; let it finish before starting another
+    }
+    this.isProcessingRetries = true;
+
+    try {
+      const dueEvents = await prisma.webhookEvent.findMany({
+        where: {
+          status: 'PENDING',
+          nextRetry: { lte: new Date() },
+        },
+        orderBy: { nextRetry: 'asc' },
+        take: 20,
+      });
+
+      for (const event of dueEvents) {
+        const webhook = await prisma.webhook.findUnique({
+          where: { id: event.webhookId },
+        });
+
+        if (!webhook || !webhook.isActive) {
+          await prisma.webhookEvent.update({
+            where: { id: event.id },
+            data: { status: 'FAILED', lastAttempt: new Date() },
+          });
+          await this.logWebhookAction(
+            event.webhookId,
+            'FAILED',
+            'Webhook was deleted or deactivated before its scheduled retry could run',
+            'FAILURE'
+          );
+          continue;
+        }
+
+        const payload: WebhookPayload = JSON.parse(JSON.stringify(event.payload));
+
+        await this.attemptWebhookDelivery(webhook, event, payload, event.attempts);
+      }
+    } catch (error) {
+      logger.error(`Failed to process pending webhook retries: ${error}`);
+    } finally {
+      this.isProcessingRetries = false;
     }
   }
 
@@ -458,14 +553,19 @@ class WebhookService {
   /**
    * Log webhook action
    */
-  private async logWebhookAction(webhookId: string, action: string, details?: string): Promise<void> {
+  private async logWebhookAction(
+    webhookId: string,
+    action: string,
+    details?: string,
+    status: 'SUCCESS' | 'FAILURE' = 'SUCCESS'
+  ): Promise<void> {
     try {
       await prisma.webhookLog.create({
         data: {
           webhookId,
           action,
           details,
-          status: 'SUCCESS',
+          status,
         },
       });
     } catch (error) {
@@ -514,11 +614,13 @@ class WebhookService {
       };
 
       const payloadString = JSON.stringify(testPayload);
-      const signature = WebhookService.generateSignature(payloadString, webhook.secret);
+      const timestamp = Math.floor(Date.now() / 1000);
+      const signature = WebhookService.generateSignature(`${timestamp}.${payloadString}`, webhook.secret);
 
       const headers = {
         'Content-Type': 'application/json',
         'X-Webhook-Signature': signature,
+        'X-Webhook-Timestamp': String(timestamp),
         'X-Webhook-ID': webhook.id,
         'X-Event-Type': 'webhook.test',
         'X-Test-Delivery': 'true',
@@ -546,7 +648,7 @@ class WebhookService {
         const responseTime = Date.now() - startTime;
         const axiosError = error as AxiosError;
 
-        await this.logWebhookAction(webhook.id, 'TESTED', `Test delivery failed: ${axiosError.message}`);
+        await this.logWebhookAction(webhook.id, 'TESTED', `Test delivery failed: ${axiosError.message}`, 'FAILURE');
 
         return {
           success: false,
@@ -557,6 +659,41 @@ class WebhookService {
       }
     } catch (error) {
       logger.error(`Failed to test webhook: ${error}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Process a received (inbound) webhook event, i.e. one sent to this
+   * server by an external caller via WebhookController.receiveWebhook,
+   * after signature verification has already passed.
+   *
+   * This only records that the event was received and processed; it does
+   * not dispatch to any eventType-specific business logic, since no such
+   * handler registry exists in this codebase yet.
+   */
+  async processWebhookEvent(eventId: string): Promise<void> {
+    try {
+      const event = await prisma.webhookEvent.findUnique({
+        where: { id: eventId },
+      });
+
+      if (!event) {
+        throw new Error('Webhook event not found');
+      }
+
+      await prisma.webhookEvent.update({
+        where: { id: eventId },
+        data: {
+          status: 'DELIVERED',
+          lastAttempt: new Date(),
+        },
+      });
+
+      await this.logWebhookAction(event.webhookId, 'RECEIVED', `Event ${event.eventType} processed successfully`);
+      logger.info(`Webhook event processed: ${eventId}`);
+    } catch (error) {
+      logger.error(`Failed to process webhook event: ${error}`);
       throw error;
     }
   }
@@ -583,7 +720,6 @@ class WebhookService {
       }
 
       const payload: WebhookPayload = JSON.parse(JSON.stringify(event.payload));
-      const signature = WebhookService.generateSignature(JSON.stringify(payload), webhook.secret);
 
       // Reset attempts for retry
       await prisma.webhookEvent.update({
@@ -594,7 +730,8 @@ class WebhookService {
         },
       });
 
-      await this.attemptWebhookDelivery(webhook, event, payload, signature, 0);
+      await this.logWebhookAction(webhook.id, 'RETRY_INITIATED', `Manual retry triggered for event ${event.eventType}`);
+      await this.attemptWebhookDelivery(webhook, event, payload, 0);
       logger.info(`Webhook event retried: ${eventId}`);
     } catch (error) {
       logger.error(`Failed to retry webhook event: ${error}`);

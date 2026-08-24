@@ -1392,7 +1392,7 @@ export function getVersionedSwaggerSpec(version: string = "v1"): any {
     definition: {
       ...options.definition,
       info: {
-        ...options.definition.info,
+        ...options.definition?.info,
         version: version === "v2" ? "2.0.0" : "1.0.0",
         title: `Nepa API ${version.toUpperCase()}`,
         description: `API documentation for Nepa Billing System - ${version.toUpperCase()}`,

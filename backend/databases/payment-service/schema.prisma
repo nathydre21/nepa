@@ -15,14 +15,37 @@ enum PaymentStatus {
   PENDING
 }
 
+enum ScheduleFrequency {
+  DAILY
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+  QUARTERLY
+  ANNUALLY
+}
+
+enum ScheduledPaymentStatus {
+  ACTIVE
+  PAUSED
+  CANCELLED
+  COMPLETED
+}
+
+enum PaymentExecutionStatus {
+  SUCCESS
+  FAILED
+  RETRYING
+  SKIPPED
+}
+
 model Payment {
   id            String        @id @default(uuid())
   amount        Decimal       @db.Decimal(10, 2)
   method        String
   status        PaymentStatus @default(PENDING)
   transactionId String?       @unique
-  billId        String        // Reference to Bill service
-  userId        String        // Reference to User service
+  billId        String
+  userId        String
   createdAt     DateTime      @default(now())
 
   @@index([billId])
@@ -34,4 +57,51 @@ model Payment {
   @@index([status, createdAt])
   @@index([method, status])
   @@index([billId, status])
+}
+
+model ScheduledPayment {
+  id            String                 @id @default(uuid())
+  userId        String
+  billId        String
+  amount        Decimal                @db.Decimal(10, 2)
+  paymentMethod String
+  frequency     ScheduleFrequency
+  status        ScheduledPaymentStatus @default(ACTIVE)
+  nextRunAt     DateTime
+  lastRunAt     DateTime?
+  endDate       DateTime?
+  maxRetries    Int                    @default(3)
+  retryCount    Int                    @default(0)
+  retryAfter    DateTime?
+  metadata      Json                   @default("{}")
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  executionLogs PaymentExecutionLog[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([nextRunAt])
+  @@index([status, nextRunAt])
+  @@index([userId, status])
+}
+
+model PaymentExecutionLog {
+  id                  String                 @id @default(uuid())
+  scheduledPaymentId  String
+  userId              String
+  amount              Decimal                @db.Decimal(10, 2)
+  status              PaymentExecutionStatus
+  transactionId       String?
+  errorMessage        String?
+  attemptNumber       Int                    @default(1)
+  walletBalanceBefore Decimal?               @db.Decimal(10, 2)
+  executedAt          DateTime               @default(now())
+
+  scheduledPayment ScheduledPayment @relation(fields: [scheduledPaymentId], references: [id], onDelete: Cascade)
+
+  @@index([scheduledPaymentId])
+  @@index([userId])
+  @@index([status])
+  @@index([executedAt])
 }

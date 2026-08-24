@@ -193,14 +193,14 @@ export class CacheMonitoringService {
         keyCount: this.metrics.redis.keyCount
       });
     } catch (error) {
-      logger.error('Metrics collection error:', error);
+      logger.error('Metrics collection error:', error as any);
       
       // Create error alert
       const errorAlert = await this.createAlertObject({
         type: 'error',
         severity: 'high',
-        message: `Metrics collection failed: ${error.message}`,
-        metadata: { error: error.message }
+        message: `Metrics collection failed: ${(error as Error).message}`,
+        metadata: { error: (error as Error).message }
       });
       await this.createAlert(errorAlert);
     }
@@ -500,7 +500,7 @@ export class CacheMonitoringService {
         }
       }
     } catch (error) {
-      logger.error('External alert error:', error);
+      logger.error('External alert error:', error as any);
     }
   }
 

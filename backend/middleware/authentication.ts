@@ -1,7 +1,29 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthenticationService } from '../services/AuthenticationService';
 import { rbacService } from '../services/RbacService';
-import { UserRole, ResourceType, PermissionScope } from '@prisma/client';
+// Define missing enums locally
+export enum ResourceType {
+  USER = 'USER',
+  BILL = 'BILL',
+  PAYMENT = 'PAYMENT',
+  AUDIT = 'AUDIT',
+  SYSTEM = 'SYSTEM'
+}
+
+export enum PermissionScope {
+  READ = 'READ',
+  WRITE = 'WRITE',
+  DELETE = 'DELETE',
+  ADMIN = 'ADMIN',
+  GLOBAL = 'GLOBAL'
+}
+
+// Define UserRole locally since Prisma client might not be generated
+export enum UserRole {
+  USER = 'USER',
+  ADMIN = 'ADMIN',
+  SUPER_ADMIN = 'SUPER_ADMIN'
+}
 
 const authService = new AuthenticationService();
 

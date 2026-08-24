@@ -35,7 +35,10 @@ export class DatabaseHealthCheck {
 
     try {
       // Simple query to check database connectivity
-      await client.$queryRaw`SELECT 1`;
+      if (!client) {
+        throw new Error('Database client is null');
+      }
+      await (client as any).$queryRaw`SELECT 1`;
       const responseTime = Date.now() - startTime;
 
       return {

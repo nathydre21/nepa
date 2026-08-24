@@ -35,7 +35,10 @@ export class ConnectionPoolMonitor {
 
     try {
       // Query PostgreSQL for connection stats
-      const result = await client.$queryRaw<any[]>`
+      if (!client) {
+        throw new Error('Database client is null');
+      }
+      const result = await (client as any).$queryRaw<any[]>`
         SELECT 
           count(*) FILTER (WHERE state = 'active') as active,
           count(*) FILTER (WHERE state = 'idle') as idle,

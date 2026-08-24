@@ -372,9 +372,6 @@ export const userProfileHandler = {
 
 // Legacy rate limiters for backward compatibility
 export const apiLimiter = rateLimit({
-  store: new RedisStore({
-    sendCommand: (...args: string[]) => redis.call(...args),
-  }),
   windowMs: 15 * 60 * 1000,
   max: 100,
   message: {
@@ -388,9 +385,6 @@ export const apiLimiter = rateLimit({
 });
 
 export const authLimiter = rateLimit({
-  store: new RedisStore({
-    sendCommand: (...args: string[]) => redis.call(...args),
-  }),
   windowMs: 15 * 60 * 1000,
   max: 10,
   message: {
@@ -404,9 +398,6 @@ export const authLimiter = rateLimit({
 });
 
 export const paymentLimiter = rateLimit({
-  store: new RedisStore({
-    sendCommand: (...args: string[]) => redis.call(...args),
-  }),
   windowMs: 5 * 60 * 1000,
   max: 5,
   message: {

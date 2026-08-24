@@ -3,12 +3,14 @@ import { AuditController } from '../controllers/AuditController';
 import { authenticate, authorize } from '../middleware/authentication';
 import { captureAuditContext, auditSensitiveOperations } from '../middleware/auditMiddleware';
 import { AuditAction, AuditSeverity } from '../services/AuditService';
+import { sanitizeInput } from '../middleware/inputSanitization';
 
 const router = Router();
 
 // Apply authentication and audit context to all routes
 router.use(authenticate);
 router.use(captureAuditContext);
+router.use(sanitizeInput);
 
 /**
  * @openapi

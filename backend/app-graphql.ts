@@ -12,6 +12,7 @@ import { uploadDocument } from './controllers/DocumentController';
 import { getDashboardData, generateReport, exportData } from './controllers/AnalyticsController';
 import { applyPaymentSecurity, processPayment, getPaymentHistory, validatePayment } from './controllers/PaymentController';
 import { setupRateLimitRoutes } from './routes/rateLimitRoutes';
+import { sanitizeInput } from './middleware/inputSanitization';
 
 const app = express();
 
@@ -52,7 +53,10 @@ configureSecurity(app);
 // 4. Body Parsing
 app.use(express.json({ limit: '10kb' }));
 
-// 5. Progressive Rate Limiting
+// 5. Input Sanitization
+app.use('/api', sanitizeInput);
+
+// 6. Progressive Rate Limiting
 app.use('/api', progressiveLimiter);
 
 // 6. Advanced Rate Limiting

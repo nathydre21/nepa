@@ -32,7 +32,7 @@ export const abuseDetector = (req: Request, res: Response, next: NextFunction) =
     .exec();
   
   // Check for suspicious patterns
-  checkSuspiciousPatterns(clientIP, userId, userAgent, path, method)
+  checkSuspiciousPatterns(clientIP || '', userId || '', userAgent, path, method)
     .then((isSuspicious) => {
       if (isSuspicious) {
         (req as any).suspicious = true;

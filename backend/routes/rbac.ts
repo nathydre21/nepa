@@ -2,11 +2,13 @@ import { Router } from 'express';
 import { roleController, permissionController, rbacController } from '../controllers/RbacController';
 import { authenticate, requirePermission } from '../middleware/authentication';
 import { ResourceType, PermissionScope } from '@prisma/client';
+import { sanitizeInput } from '../middleware/inputSanitization';
 
 const router = Router();
 
 // Apply authentication to all RBAC routes
 router.use(authenticate);
+router.use(sanitizeInput);
 
 // ROLE ROUTES
 

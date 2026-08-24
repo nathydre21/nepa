@@ -266,7 +266,7 @@ export class CacheWarmupService {
 
       logger.info(`Cache warmup completed in ${executionTime}ms`);
     } catch (error) {
-      logger.error('Cache warmup error:', error);
+      logger.error('Cache warmup error:', error as any);
     } finally {
       this.isRunning = false;
     }
@@ -301,7 +301,7 @@ export class CacheWarmupService {
       } catch (error) {
         this.stats.failedJobs++;
         job.errorCount++;
-        logger.error(`Warmup job ${job.name} failed:`, error);
+        logger.error(`Warmup job ${job.name} failed:`, error as any);
       } finally {
         // Release slot
         const index = semaphore.indexOf(job.id);
@@ -343,7 +343,7 @@ export class CacheWarmupService {
       const executionTime = Date.now() - startTime;
       logger.debug(`Warmup job ${job.name} completed in ${executionTime}ms`);
     } catch (error) {
-      logger.error(`Warmup job ${job.name} error:`, error);
+      logger.error(`Warmup job ${job.name} error:`, error as any);
       throw error;
     }
   }
@@ -372,7 +372,7 @@ export class CacheWarmupService {
 
       return sessions;
     } catch (error) {
-      logger.error('Load active sessions error:', error);
+      logger.error('Load active sessions error:', error as any);
       return [];
     }
   }
@@ -407,7 +407,7 @@ export class CacheWarmupService {
 
       return users;
     } catch (error) {
-      logger.error('Load recent users error:', error);
+      logger.error('Load recent users error:', error as any);
       return [];
     }
   }
@@ -432,7 +432,7 @@ export class CacheWarmupService {
 
       return preferences;
     } catch (error) {
-      logger.error('Load user preferences error:', error);
+      logger.error('Load user preferences error:', error as any);
       return [];
     }
   }
@@ -454,7 +454,7 @@ export class CacheWarmupService {
 
       return payments;
     } catch (error) {
-      logger.error('Load recent payments error:', error);
+      logger.error('Load recent payments error:', error as any);
       return [];
     }
   }
@@ -471,7 +471,7 @@ export class CacheWarmupService {
 
       return webhooks;
     } catch (error) {
-      logger.error('Load webhook configs error:', error);
+      logger.error('Load webhook configs error:', error as any);
       return [];
     }
   }
@@ -490,7 +490,7 @@ export class CacheWarmupService {
 
       return providers;
     } catch (error) {
-      logger.error('Load utility providers error:', error);
+      logger.error('Load utility providers error:', error as any);
       return [];
     }
   }
@@ -527,7 +527,7 @@ export class CacheWarmupService {
 
       return analytics;
     } catch (error) {
-      logger.error('Load admin analytics error:', error);
+      logger.error('Load admin analytics error:', error as any);
       return {};
     }
   }
@@ -561,7 +561,7 @@ export class CacheWarmupService {
 
       return historical;
     } catch (error) {
-      logger.error('Load historical analytics error:', error);
+      logger.error('Load historical analytics error:', error as any);
       return {};
     }
   }
@@ -586,7 +586,7 @@ export class CacheWarmupService {
    */
   private getPriorityWeight(priority: string): number {
     const weights = { high: 1, medium: 2, low: 3 };
-    return weights[priority] || 4;
+    return weights[priority as keyof typeof weights] || 4;
   }
 
   /**
@@ -639,7 +639,7 @@ export class CacheWarmupService {
       await this.runJob(job);
       return true;
     } catch (error) {
-      logger.error(`Manual job run failed for ${jobId}:`, error);
+      logger.error(`Manual job run failed for ${jobId}:`, error as any);
       return false;
     }
   }

@@ -1,9 +1,6 @@
-// Structured logging with correlation IDs and distributed tracing
-import winston from 'winston';
-import DailyRotateFile from 'winston-daily-rotate-file';
+import pino from 'pino';
 import { AsyncLocalStorage } from 'async_hooks';
 
-// Context storage for request correlation
 export const contextStorage = new AsyncLocalStorage<{
   correlationId?: string;
   traceId?: string;
@@ -11,102 +8,55 @@ export const contextStorage = new AsyncLocalStorage<{
   userId?: string;
 }>();
 
-// Custom format for structured logging
-const structuredFormat = winston.format.combine(
-  winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss.SSS' }),
-  winston.format.errors({ stack: true }),
-  winston.format.printf((info) => {
-    const context = contextStorage.getStore();
-    const logEntry = {
-      timestamp: info.timestamp,
-      level: info.level,
-      service: process.env.SERVICE_NAME || 'nepa-service',
-      message: info.message,
-      correlationId: context?.correlationId,
-      traceId: context?.traceId,
-      spanId: context?.spanId,
-      userId: context?.userId,
-      ...info.metadata,
-    };
+const isDevelopment = process.env.NODE_ENV !== 'production';
 
-    if (info.stack) {
-      logEntry.stack = info.stack;
-    }
-
-    return JSON.stringify(logEntry);
-  })
-);
-
-// Create logger instance
 export class StructuredLogger {
-  private logger: winston.Logger;
+  private logger: pino.Logger;
   private serviceName: string;
 
   constructor(serviceName: string) {
     this.serviceName = serviceName;
-    
-    this.logger = winston.createLogger({
-      level: process.env.LOG_LEVEL || 'info',
-      format: structuredFormat,
-      defaultMeta: { service: serviceName },
-      transports: [
-        // Console output
-        new winston.transports.Console({
-          format: winston.format.combine(
-            winston.format.colorize(),
-            winston.format.simple()
-          ),
-        }),
-        
-        // File output - All logs
-        new DailyRotateFile({
-          filename: `logs/${serviceName}/application-%DATE%.log`,
-          datePattern: 'YYYY-MM-DD',
-          maxSize: '20m',
-          maxFiles: '14d',
-          level: 'info',
-        }),
-        
-        // File output - Error logs
-        new DailyRotateFile({
-          filename: `logs/${serviceName}/error-%DATE%.log`,
-          datePattern: 'YYYY-MM-DD',
-          maxSize: '20m',
-          maxFiles: '30d',
-          level: 'error',
-        }),
-      ],
-    });
-  }
 
-  private log(level: string, message: string, metadata?: any) {
-    this.logger.log(level, message, { metadata });
+    this.logger = pino({
+      name: serviceName,
+      level: process.env.LOG_LEVEL || (isDevelopment ? 'debug' : 'info'),
+      transport: isDevelopment
+        ? {
+            target: 'pino-pretty',
+            options: {
+              colorize: true,
+              translateTime: 'HH:MM:ss Z',
+              ignore: 'pid,hostname',
+            },
+          }
+        : undefined,
+      timestamp: pino.stdTimeFunctions.isoTime,
+      mixin() {
+        const context = contextStorage.getStore();
+        return {
+          service: process.env.SERVICE_NAME || 'nepa-service',
+          ...context,
+        };
+      },
+    });
   }
 
   info(message: string, metadata?: any) {
-    this.log('info', message, metadata);
+    this.logger.info(metadata, message);
   }
 
   warn(message: string, metadata?: any) {
-    this.log('warn', message, metadata);
+    this.logger.warn(metadata, message);
   }
 
   error(message: string, error?: Error, metadata?: any) {
-    this.log('error', message, {
-      ...metadata,
-      error: error ? {
-        name: error.name,
-        message: error.message,
-        stack: error.stack,
-      } : undefined,
-    });
+    this.logger.error({ ...metadata, err: error }, message);
   }
 
   debug(message: string, metadata?: any) {
-    this.log('debug', message, metadata);
+    this.logger.debug(metadata, message);
   }
 
-  // Business metrics logging
   metric(metricName: string, value: number, tags?: Record<string, string>) {
     this.info(`Metric: ${metricName}`, {
       metric: metricName,
@@ -116,7 +66,6 @@ export class StructuredLogger {
     });
   }
 
-  // Audit logging
   audit(action: string, resource: string, metadata?: any) {
     this.info(`Audit: ${action} on ${resource}`, {
       action,
@@ -126,7 +75,6 @@ export class StructuredLogger {
     });
   }
 
-  // Performance logging
   performance(operation: string, duration: number, metadata?: any) {
     this.info(`Performance: ${operation}`, {
       operation,
@@ -137,7 +85,6 @@ export class StructuredLogger {
   }
 }
 
-// Create service-specific loggers
 export const createLogger = (serviceName: string) => new StructuredLogger(serviceName);
 
 export default createLogger;

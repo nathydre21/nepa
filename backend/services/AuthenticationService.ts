@@ -776,6 +776,9 @@ export class AuthenticationService {
     } catch (error) {
       console.error('Get available methods error:', error);
       return [];
+    }
+  }
+
   async getTokenStatus(token: string): Promise<{
     valid: boolean;
     expiresAt?: Date;

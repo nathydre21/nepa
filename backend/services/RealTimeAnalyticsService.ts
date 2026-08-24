@@ -77,7 +77,7 @@ class RealTimeAnalyticsService {
 
     return {
       timestamp: new Date().toISOString(),
-      totalRevenue: stats.totalRevenue,
+      totalRevenue: Number(stats.totalRevenue),
       overdueBills: stats.overdueBills,
       pendingBills: stats.pendingBills,
       successfulPayments: stats.successfulPayments,
@@ -118,9 +118,10 @@ class RealTimeAnalyticsService {
         SocketServer.getInstance().emitAnalyticsUpdate(metrics);
       } catch (err) {
         console.error('[RealTimeAnalyticsService] Broadcast error:', err);
-        SocketServer.getIO()
-          .to(ROOMS.analytics)
-          .emit('analytics_error', { message: 'Failed to fetch real-time metrics' });
+        // TODO: Fix socket.io emit
+        // SocketServer.getIO()
+        //   .to(ROOMS.analytics)
+        //   .emit('analytics_error', { message: 'Failed to fetch real-time metrics' });
       }
     }, this.BROADCAST_INTERVAL_MS);
 

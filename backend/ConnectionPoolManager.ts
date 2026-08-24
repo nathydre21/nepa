@@ -1,4 +1,5 @@
-import { Server, Socket } from 'socket.io';
+import { Server } from 'socket.io';
+// import type { Socket } from 'socket.io';
 
 interface ConnectionPoolConfig {
   maxConnections: number;
@@ -8,7 +9,7 @@ interface ConnectionPoolConfig {
 }
 
 interface PooledConnection {
-  socket: Socket;
+  socket: any;
   userId: string;
   connectedAt: Date;
   lastActivity: Date;
@@ -40,7 +41,7 @@ export class ConnectionPoolManager {
     return ConnectionPoolManager.instance;
   }
 
-  public addConnection(socket: Socket, userId: string): boolean {
+  public addConnection(socket: any, userId: string): boolean {
     // Check global connection limit
     if (this.connections.size >= this.config.maxConnections) {
       console.warn('⚠️ Maximum global connections reached');
@@ -155,7 +156,7 @@ export class ConnectionPoolManager {
     });
   }
 
-  private setupActivityMonitoring(socket: Socket, connection: PooledConnection): void {
+  private setupActivityMonitoring(socket: any, connection: PooledConnection): void {
     // Monitor all events to update activity
     socket.onAny(() => {
       this.updateActivity(socket.id);
@@ -168,7 +169,7 @@ export class ConnectionPoolManager {
     });
 
     // Handle disconnection
-    socket.on('disconnect', (reason) => {
+    socket.on('disconnect', (reason: any) => {
       this.removeConnection(socket.id);
     });
   }

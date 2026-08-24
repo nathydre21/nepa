@@ -4,7 +4,9 @@ import { paymentLimiter, transactionLimiter } from '../middleware/rateLimiter';
 import { conditionalCaptcha } from '../middleware/captcha';
 import { abuseDetector } from '../middleware/abuseDetection';
 import { invalidateUserCache, invalidateCacheByPattern } from '../middleware/cache';
-import { Server, TransactionBuilder, Networks, BASE_FEE, Asset, Keypair } from 'stellar-sdk';
+import { Server, TransactionBuilder, Networks, BASE_FEE, Asset, Transaction } from 'stellar-sdk';
+import { getCacheManager } from '../services/RedisCacheManager';
+import { errorResponse } from '../utils/errorResponse';
 
 const billingService = new BillingService();
 
@@ -27,8 +29,9 @@ interface TransactionStatus {
   errorMessage?: string;
 }
 
-// In-memory transaction status store (in production, use Redis or database)
-const transactionStatusStore = new Map<string, TransactionStatus>();
+// Use Redis for transaction status storage (shared, persistent across instances)
+const cacheManager = getCacheManager();
+const TRANSACTION_TTL = parseInt(process.env.TRANSACTION_TTL_SECONDS || '604800'); // default 7 days
 
 // Apply rate limiting and security to all payment routes
 export const applyPaymentSecurity = [
@@ -40,9 +43,114 @@ export const applyPaymentSecurity = [
 
 /**
  * @openapi
+ * /api/payment/prepare:
+ *   post:
+ *     summary: Prepare an unsigned Stellar payment transaction for client-side signing
+ *     description: >
+ *       Returns a base64-encoded unsigned transaction XDR that the client must sign
+ *       with their wallet (Freighter, xBull, Albedo, etc.) before submitting via
+ *       /api/payment/process. The server never receives or handles the user's secret key.
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               billId:
+ *                 type: string
+ *               amount:
+ *                 type: number
+ *               sourcePublicKey:
+ *                 type: string
+ *                 description: The user's Stellar public key (G...). Never the secret key.
+ *     responses:
+ *       200:
+ *         description: Unsigned transaction XDR prepared successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 unsignedXdr:
+ *                   type: string
+ *                   description: Base64-encoded unsigned transaction XDR for client-side signing
+ *                 networkPassphrase:
+ *                   type: string
+ *       400:
+ *         description: Invalid request data
+ */
+export const prepareStellarPayment = async (req: Request, res: Response) => {
+  // SECURITY (Issue #406): This endpoint never handles secret keys. It builds an
+  // unsigned transaction that the client signs locally with their wallet, then
+  // the client returns the signed XDR via /api/payment/process for submission
+  // to the Stellar network. The user's secret key NEVER touches the server.
+  const { billId, amount, sourcePublicKey } = req.body;
+  const userId = (req as any).user?.id;
+
+  // Validate that the user is authenticated
+  if (!userId) {
+    return errorResponse(res, 401, 'User authentication required');
+  }
+
+  // Validate required fields — sourcePublicKey is the user's PUBLIC key only
+  if (!billId || !amount || !sourcePublicKey) {
+    return errorResponse(res, 400, 'Missing required fields: billId, amount, sourcePublicKey');
+  }
+
+  // Validate amount is positive
+  if (amount <= 0) {
+    return errorResponse(res, 400, 'Payment amount must be greater than 0');
+  }
+
+  try {
+    // Load the source account from the Stellar network using the PUBLIC key only.
+    // The server never has access to the user's secret key at any point in this flow.
+    const sourceAccount = await stellarServer.loadAccount(sourcePublicKey);
+
+    // Build an unsigned transaction — the client will sign this with their wallet
+    const transaction = new TransactionBuilder(sourceAccount, {
+      fee: BASE_FEE,
+      networkPassphrase: stellarNetwork
+    })
+      .addOperation({
+        type: 'payment',
+        destination: process.env.STELLAR_MERCHANT_WALLET || 'GATESTNETACCOUNT',
+        asset: STELLAR_ASSET,
+        amount: (amount * 10000000).toString(), // Convert to stroops (7 decimal places)
+      })
+      .setTimeout(180) // Give the client 3 minutes to sign with their wallet
+      .build();
+
+    // Return the unsigned XDR for the client to sign — no secret keys involved
+    res.status(200).json({
+      status: 200,
+      message: 'Unsigned transaction prepared. Sign with your wallet and submit via /api/payment/process',
+      data: {
+        unsignedXdr: transaction.toXDR().toString('base64'),
+        networkPassphrase: stellarNetwork,
+        amount,
+        billId,
+        destination: process.env.STELLAR_MERCHANT_WALLET || 'GATESTNETACCOUNT'
+      }
+    });
+  } catch (error: any) {
+    console.error('Error preparing Stellar transaction:', error);
+    errorResponse(res, 400, 'Failed to prepare Stellar transaction');
+  }
+};
+
+/**
+ * @openapi
  * /api/payment/process:
  *   post:
  *     summary: Process a payment
+ *     description: >
+ *       For Stellar payments, the client must first call /api/payment/prepare to
+ *       get an unsigned XDR, sign it with their wallet, then submit the signed
+ *       XDR here. The server never receives or handles the user's secret key.
  *     security:
  *       - ApiKeyAuth: []
  *     requestBody:
@@ -58,7 +166,13 @@ export const applyPaymentSecurity = [
  *                 type: number
  *               paymentMethod:
  *                 type: string
- *                 enum: [BANK_TRANSFER, CREDIT_CARD, CRYPTO]
+ *                 enum: [BANK_TRANSFER, CREDIT_CARD, STELLAR]
+ *               signedXdr:
+ *                 type: string
+ *                 description: >
+ *                   Base64-encoded signed transaction XDR (required for STELLAR payments).
+ *                   The client signs the unsigned XDR from /api/payment/prepare
+ *                   using their wallet (Freighter, xBull, Albedo, etc.).
  *               recaptchaToken:
  *                 type: string
  *     responses:
@@ -73,32 +187,41 @@ export const processPayment = async (req: Request, res: Response) => {
   const transactionId = `txn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   
   try {
-    const { billId, amount, paymentMethod, stellarSecretKey } = req.body;
+    // SECURITY FIX (Issue #406): stellarSecretKey has been REMOVED from the
+    // request body. Instead, the client now sends a `signedXdr` — a transaction
+    // they signed locally with their wallet. The server only submits the
+    // pre-signed transaction to the Stellar network. The user's secret key
+    // NEVER touches the server.
+    //
+    // Previous (vulnerable) code:
+    //   const { billId, amount, paymentMethod, stellarSecretKey } = req.body;
+    //
+    // Fixed code:
+    const { billId, amount, paymentMethod, signedXdr } = req.body;
     const userId = (req as any).user?.id;
     
     if (!userId) {
-      return res.status(401).json({
-        status: 401,
-        error: 'User authentication required'
-      });
+      return errorResponse(res, 401, 'User authentication required');
     }
     
     // Validate payment data
     if (!billId || !amount || !paymentMethod) {
-      return res.status(400).json({
-        status: 400,
-        error: 'Missing required payment fields'
-      });
+      return errorResponse(res, 400, 'Missing required payment fields');
     }
     
     if (amount <= 0) {
-      return res.status(400).json({
-        status: 400,
-        error: 'Payment amount must be greater than 0'
-      });
+      return errorResponse(res, 400, 'Payment amount must be greater than 0');
     }
 
-    // Initialize transaction status
+    // SECURITY (Issue #406): Reject any request that attempts to pass a secret
+    // key — this field should never be present. Log the attempt for security
+    // monitoring to detect potential attacks or misconfigured clients.
+    if (req.body.stellarSecretKey || req.body.secretKey || req.body.seed) {
+      console.warn(`[SECURITY] User ${userId} attempted to pass a secret key in payment request. This is a security violation.`);
+      return errorResponse(res, 400, 'Secret keys must never be sent to the server. Please sign your transaction locally with your wallet and submit the signed XDR.');
+    }
+
+    // Initialize transaction status (persist to Redis with TTL)
     const transactionStatus: TransactionStatus = {
       id: transactionId,
       userId,
@@ -109,46 +232,52 @@ export const processPayment = async (req: Request, res: Response) => {
       createdAt: new Date(),
       updatedAt: new Date()
     };
-    transactionStatusStore.set(transactionId, transactionStatus);
+    await cacheManager.set(`transaction:${transactionId}`, transactionStatus, { ttl: TRANSACTION_TTL, tags: ['transaction', `user:${userId}`] });
 
     let paymentResult;
     let stellarTransactionId: string | undefined;
 
     // Handle Stellar blockchain payments
     if (paymentMethod === 'STELLAR') {
-      if (!stellarSecretKey) {
-        throw new Error('Stellar secret key is required for Stellar payments');
+      // SECURITY FIX (Issue #406): Instead of requiring the secret key, we now
+      // require a signedXdr — a transaction that the client has already signed
+      // with their wallet (Freighter, xBull, Albedo, etc.).
+      //
+      // The new secure flow is:
+      //   1. Client calls /api/payment/prepare to get an unsigned XDR
+      //   2. Client signs the XDR with their wallet locally (secret key never leaves the client)
+      //   3. Client sends the signed XDR here for submission to the network
+      //
+      // The server NEVER sees or handles the user's secret key.
+      if (!signedXdr) {
+        return errorResponse(res, 400, 'Signed XDR is required for Stellar payments. Call /api/payment/prepare first, sign the transaction with your wallet, then submit the signed XDR.');
       }
 
-      // Update status to processing
+      // Update status to processing and persist
       transactionStatus.status = 'processing';
       transactionStatus.updatedAt = new Date();
+      await cacheManager.set(`transaction:${transactionId}`, transactionStatus, { ttl: TRANSACTION_TTL, tags: ['transaction', `user:${userId}`] });
 
       try {
-        const sourceKeypair = Keypair.fromSecret(stellarSecretKey);
-        const sourceAccount = await stellarServer.loadAccount(sourceKeypair.publicKey());
-        
-        // Create Stellar transaction
-        const transaction = new TransactionBuilder(sourceAccount, {
-          fee: BASE_FEE,
-          networkPassphrase: stellarNetwork
-        })
-          .addOperation({
-            type: 'payment',
-            destination: process.env.STELLAR_MERCHANT_WALLET || 'GATESTNETACCOUNT',
-            asset: STELLAR_ASSET,
-            amount: (amount * 10000000).toString(), // Convert to stroops (7 decimal places)
-          })
-          .setTimeout(30)
-          .build();
+        // Reconstruct the transaction from the client-signed XDR.
+        // The transaction is already signed by the client's wallet — the server
+        // does NOT need the user's secret key to submit it to the network.
+        const signedTransaction = new Transaction(signedXdr, stellarNetwork);
 
-        transaction.sign(sourceKeypair);
-        
-        // Submit transaction to Stellar network
-        const stellarResult = await stellarServer.submitTransaction(transaction);
+        // SECURITY: Verify the transaction has at least one signature before
+        // submitting. This ensures the client actually signed it with their
+        // wallet and didn't send an unsigned XDR.
+        if (!signedTransaction.signatures || signedTransaction.signatures.length === 0) {
+          throw new Error('Transaction has no signatures — the client must sign the XDR with their wallet before submitting');
+        }
+
+        // Submit the pre-signed transaction to the Stellar network.
+        // The server does not sign anything — it only relays the client's
+        // already-signed transaction to the Stellar horizon server.
+        const stellarResult = await stellarServer.submitTransaction(signedTransaction);
         stellarTransactionId = stellarResult.hash;
         
-        // Verify transaction was successful
+        // Verify transaction was successful on the network
         const transactionRecord = await stellarServer.transactions()
           .transaction(stellarTransactionId)
           .call();
@@ -164,7 +293,7 @@ export const processPayment = async (req: Request, res: Response) => {
             amount,
             paymentMethod,
             timestamp: new Date(),
-            transactionId: stellarTransactionId
+            transactionId: stellarTransactionId || transactionId
           }),
           stellarTransactionId,
           network: 'testnet'
@@ -172,29 +301,28 @@ export const processPayment = async (req: Request, res: Response) => {
 
         transactionStatus.status = 'completed';
         transactionStatus.stellarTransactionId = stellarTransactionId;
+        await cacheManager.set(`transaction:${transactionId}`, transactionStatus, { ttl: TRANSACTION_TTL, tags: ['transaction', `user:${userId}`] });
 
       } catch (stellarError: any) {
-        console.error('Stellar payment error:', stellarError);
+        logger.error('Stellar payment error', { error: stellarError.message, transactionId });
         transactionStatus.status = 'failed';
         transactionStatus.errorMessage = stellarError.message || 'Stellar transaction failed';
-        
-        return res.status(400).json({
-          status: 400,
-          error: 'Stellar payment processing failed',
-          details: stellarError.message,
-          transactionId
-        });
+        await cacheManager.set(`transaction:${transactionId}`, transactionStatus, { ttl: TRANSACTION_TTL, tags: ['transaction', `user:${userId}`] });
+      
+          return errorResponse(res, 400, 'Stellar payment processing failed');
       }
     } else {
       // Handle traditional payment methods
-      paymentResult = await billingService.processPayment({
-        billId,
-        userId,
-        amount,
-        paymentMethod,
-        timestamp: new Date()
-      });
-      transactionStatus.status = 'completed';
+        paymentResult = await billingService.processPayment({
+          billId,
+          userId,
+          amount,
+          paymentMethod,
+          timestamp: new Date(),
+          transactionId
+        });
+        transactionStatus.status = 'completed';
+        await cacheManager.set(`transaction:${transactionId}`, transactionStatus, { ttl: TRANSACTION_TTL, tags: ['transaction', `user:${userId}`] });
     }
     
     transactionStatus.updatedAt = new Date();
@@ -215,22 +343,22 @@ export const processPayment = async (req: Request, res: Response) => {
     });
     
   } catch (error: any) {
-    console.error('Payment processing error:', error);
+    logger.error('Payment processing error', { error: error.message, transactionId });
     
-    // Update transaction status to failed
-    const failedTransaction = transactionStatusStore.get(transactionId);
-    if (failedTransaction) {
-      failedTransaction.status = 'failed';
-      failedTransaction.errorMessage = error.message || 'Unknown error';
-      failedTransaction.updatedAt = new Date();
+    // Update transaction status to failed (persist to Redis)
+    try {
+      const failedTransaction = await cacheManager.get<TransactionStatus>(`transaction:${transactionId}`);
+      if (failedTransaction) {
+        failedTransaction.status = 'failed';
+        failedTransaction.errorMessage = error.message || 'Unknown error';
+        failedTransaction.updatedAt = new Date();
+        await cacheManager.set(`transaction:${transactionId}`, failedTransaction, { ttl: TRANSACTION_TTL, tags: ['transaction', `user:${userId}`] });
+      }
+    } catch (e) {
+      console.error('Failed to update failed transaction in cache:', e);
     }
     
-    res.status(500).json({
-      status: 500,
-      error: 'Payment processing failed',
-      message: error.message,
-      transactionId
-    });
+    errorResponse(res, 500, 'Payment processing failed');
   }
 };
 
@@ -263,10 +391,7 @@ export const getPaymentHistory = async (req: Request, res: Response) => {
     const offset = parseInt(req.query.offset as string) || 0;
     
     if (!userId) {
-      return res.status(401).json({
-        status: 401,
-        error: 'User authentication required'
-      });
+      return errorResponse(res, 401, 'User authentication required');
     }
     
     const paymentHistory = await billingService.getPaymentHistory(userId, limit, offset);
@@ -279,10 +404,7 @@ export const getPaymentHistory = async (req: Request, res: Response) => {
     
   } catch (error) {
     console.error('Payment history error:', error);
-    res.status(500).json({
-      status: 500,
-      error: 'Failed to retrieve payment history'
-    });
+    errorResponse(res, 500, 'Failed to retrieve payment history');
   }
 };
 
@@ -314,27 +436,18 @@ export const validatePayment = async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
     
     if (!userId) {
-      return res.status(401).json({
-        status: 401,
-        error: 'User authentication required'
-      });
+      return errorResponse(res, 401, 'User authentication required');
     }
     
     // Validate bill exists and belongs to user
     const bill = await billingService.getBill(billId);
     if (!bill || bill.userId !== userId) {
-      return res.status(404).json({
-        status: 404,
-        error: 'Bill not found or access denied'
-      });
+      return errorResponse(res, 404, 'Bill not found or access denied');
     }
     
     // Validate amount
     if (amount <= 0 || amount > Number(bill.amount) + Number(bill.lateFee || 0)) {
-      return res.status(400).json({
-        status: 400,
-        error: 'Invalid payment amount'
-      });
+      return errorResponse(res, 400, 'Invalid payment amount');
     }
     
     res.status(200).json({
@@ -349,10 +462,7 @@ export const validatePayment = async (req: Request, res: Response) => {
     
   } catch (error) {
     console.error('Payment validation error:', error);
-    res.status(500).json({
-      status: 500,
-      error: 'Payment validation failed'
-    });
+    errorResponse(res, 500, 'Payment validation failed');
   }
 };
 
@@ -381,51 +491,65 @@ export const getTransactionStatus = async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
     
     if (!userId) {
-      return res.status(401).json({
-        status: 401,
-        error: 'User authentication required'
-      });
+      return errorResponse(res, 401, 'User authentication required');
     }
     
-    const transaction = transactionStatusStore.get(transactionId);
-    
-    if (!transaction || transaction.userId !== userId) {
-      return res.status(404).json({
-        status: 404,
-        error: 'Transaction not found or access denied'
-      });
-    }
-    
-    // For Stellar transactions, check network status
-    if (transaction.stellarTransactionId && transaction.status === 'processing') {
-      try {
-        const stellarTx = await stellarServer.transactions()
-          .transaction(transaction.stellarTransactionId)
-          .call();
-        
-        if (stellarTx.successful) {
-          transaction.status = 'completed';
-          transaction.updatedAt = new Date();
-        } else if (stellarTx.status === 'failed') {
-          transaction.status = 'failed';
-          transaction.errorMessage = 'Stellar transaction failed on network';
-          transaction.updatedAt = new Date();
-        }
-      } catch (error) {
-        console.error('Error checking Stellar transaction:', error);
+    // First try Redis (active transactions)
+    const transaction = await cacheManager.get<TransactionStatus>(`transaction:${transactionId}`);
+
+    if (transaction) {
+      if (transaction.userId !== userId) {
+        return errorResponse(res, 404, 'Transaction not found or access denied');
       }
+
+      // For Stellar transactions, check network status when processing
+      if (transaction.stellarTransactionId && transaction.status === 'processing') {
+        try {
+          const stellarTx = await stellarServer.transactions()
+            .transaction(transaction.stellarTransactionId)
+            .call();
+
+          if (stellarTx.successful) {
+            transaction.status = 'completed';
+            transaction.updatedAt = new Date();
+            await cacheManager.set(`transaction:${transactionId}`, transaction, { ttl: TRANSACTION_TTL, tags: ['transaction', `user:${userId}`] });
+          } else if ((stellarTx as any).status === 'failed') {
+            transaction.status = 'failed';
+            transaction.errorMessage = 'Stellar transaction failed on network';
+            transaction.updatedAt = new Date();
+            await cacheManager.set(`transaction:${transactionId}`, transaction, { ttl: TRANSACTION_TTL, tags: ['transaction', `user:${userId}`] });
+          }
+        } catch (error) {
+          console.error('Error checking Stellar transaction:', error);
+        }
+      }
+
+      return res.status(200).json({ status: 200, data: transaction });
     }
-    
-    res.status(200).json({
-      status: 200,
-      data: transaction
-    });
+
+    // If not in Redis, fall back to persisted payments in DB
+    const paymentRecord: any = await billingService.getPaymentByTransactionId(transactionId);
+    if (!paymentRecord || paymentRecord.userId !== userId) {
+      return errorResponse(res, 404, 'Transaction not found or access denied');
+    }
+
+    // Map payment record to TransactionStatus-lite response
+    const fromDb: TransactionStatus = {
+      id: transactionId,
+      userId: paymentRecord.userId,
+      billId: paymentRecord.billId,
+      amount: Number(paymentRecord.amount),
+      paymentMethod: paymentRecord.method,
+      stellarTransactionId: paymentRecord.transactionId,
+      status: paymentRecord.status === 'SUCCESS' ? 'completed' : 'failed',
+      createdAt: paymentRecord.createdAt,
+      updatedAt: paymentRecord.updatedAt
+    };
+
+    return res.status(200).json({ status: 200, data: fromDb });
     
   } catch (error) {
     console.error('Transaction status error:', error);
-    res.status(500).json({
-      status: 500,
-      error: 'Failed to retrieve transaction status'
-    });
+    errorResponse(res, 500, 'Failed to retrieve transaction status');
   }
 };
