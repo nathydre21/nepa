@@ -21,7 +21,6 @@ const ORACLE_MANUAL_OVERRIDES: Symbol = symbol_short!("M_OVR");
 // Oracle data structures
 #[contracttype]
 #[derive(Clone)]
-#[contracttype]
 pub struct PriceFeed {
     pub feed_address: Address,
     pub base_asset: String,
@@ -34,7 +33,6 @@ pub struct PriceFeed {
 
 #[contracttype]
 #[derive(Clone)]
-#[contracttype]
 pub struct UtilityRate {
     pub utility_type: String,
     pub rate_per_kwh: i128,
@@ -46,7 +44,6 @@ pub struct UtilityRate {
 
 #[contracttype]
 #[derive(Clone)]
-#[contracttype]
 pub struct OracleConfig {
     pub max_age_seconds: u64,
     pub min_reliability_score: u32,
@@ -56,7 +53,6 @@ pub struct OracleConfig {
 
 #[contracttype]
 #[derive(Clone)]
-#[contracttype]
 pub struct OracleReliability {
     pub success_count: u32,
     pub failure_count: u32,
@@ -67,7 +63,6 @@ pub struct OracleReliability {
 
 #[contracttype]
 #[derive(Clone)]
-#[contracttype]
 pub struct OracleCost {
     pub total_spent: i128,
     pub calls_made: u32,
@@ -79,7 +74,6 @@ pub struct OracleCost {
 
 #[contracttype]
 #[derive(Clone)]
-#[contracttype]
 pub struct UpdateSchedule {
     pub price_feed_interval: u64,
     pub utility_rate_interval: u64,
@@ -100,7 +94,6 @@ pub struct UpdateSchedule {
 ///   - HALF_OPEN: Recovery mode — a test call is made to check if the oracle recovered
 #[contracttype]
 #[derive(Clone)]
-#[contracttype]
 pub struct CircuitBreaker {
     /// Current state: 0 = CLOSED, 1 = OPEN, 2 = HALF_OPEN
     pub state: u32,
@@ -118,7 +111,6 @@ pub struct CircuitBreaker {
 /// When present, this takes priority over both live and fallback prices.
 #[contracttype]
 #[derive(Clone)]
-#[contracttype]
 pub struct ManualOverride {
     pub price: i128,
     pub decimals: u32,
@@ -139,7 +131,7 @@ impl OracleManager {
 
     // Initialize oracle configuration
     pub fn initialize_oracle(env: Env, admin: Address, config: OracleConfig) {
-        admin.require_auth();
+        Self::require_auth(&admin);
 
         // Set initial configuration
         env.storage().instance().set(&ORACLE_CONFIG, &config);
@@ -179,7 +171,7 @@ impl OracleManager {
 
     // Add a new price feed
     pub fn add_price_feed(env: Env, admin: Address, feed_id: String, price_feed: PriceFeed) {
-        admin.require_auth();
+        Self::require_auth(&admin);
 
         let mut feeds: Map<String, PriceFeed> = env
             .storage()
@@ -242,7 +234,7 @@ impl OracleManager {
 
     // Add utility rate
     pub fn add_utility_rate(env: Env, admin: Address, rate_id: String, utility_rate: UtilityRate) {
-        admin.require_auth();
+        Self::require_auth(&admin);
 
         let mut rates: Map<String, UtilityRate> = env
             .storage()

@@ -169,7 +169,7 @@ fn test_price_feed_data_too_old() {
         let result =
             OracleManager::update_price_feed(env.clone(), feed_id, 300000000000, old_timestamp);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Data too old");
+        assert_eq!(result.unwrap_err(), String::from_str(&env, "Data too old"));
     });
 }
 
@@ -352,7 +352,10 @@ fn test_oracle_cost_tracking() {
 
         let expensive_call = OracleManager::track_oracle_cost(env.clone(), 2000000);
         assert!(expensive_call.is_err());
-        assert_eq!(expensive_call.unwrap_err(), "Cost exceeds limit per call");
+        assert_eq!(
+            expensive_call.unwrap_err(),
+            String::from_str(&env, "Cost exceeds limit per call")
+        );
     });
 }
 
