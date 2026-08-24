@@ -64,10 +64,10 @@ echo "🗄️  Setting up CI migration test databases..."
 node scripts/ci-setup-test-databases.js
 
 echo "📦 Running Prisma migrate deploy..."
-npx prisma migrate deploy
+npx prisma migrate deploy --schema=./prisma/schema.prisma
 
 echo "📦 Generating Prisma client..."
-npx prisma generate
+npx prisma generate --schema=./prisma/schema.prisma
 
 echo "📦 Running SQL service migrations..."
 node migrations/migration_runner.js up
