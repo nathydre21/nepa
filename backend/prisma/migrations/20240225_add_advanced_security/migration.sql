@@ -4,20 +4,20 @@
 
 -- Create ApiKey table
 CREATE TABLE "ApiKey" (
-    "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     "name" VARCHAR(255) NOT NULL,
     "keyHash" VARCHAR(255) NOT NULL,
     "keyPrefix" VARCHAR(50) NOT NULL,
-    "userId" UUID NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+    "userId" TEXT NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
     "scopes" TEXT[] NOT NULL DEFAULT '{}',
-    "expiresAt" TIMESTAMP,
-    "lastUsedAt" TIMESTAMP,
+    "expiresAt" TIMESTAMP(3),
+    "lastUsedAt" TIMESTAMP(3),
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "isRevoked" BOOLEAN NOT NULL DEFAULT false,
-    "revokedAt" TIMESTAMP,
+    "revokedAt" TIMESTAMP(3),
     "revokedReason" TEXT,
-    "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
-    "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create indexes for ApiKey table
@@ -29,24 +29,14 @@ CREATE INDEX "ApiKey_isActive_idx" ON "ApiKey"("isActive");
 
 -- Create MfaBackupCode table
 CREATE TABLE "MfaBackupCode" (
-    "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    "userId" UUID NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+    "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    "userId" TEXT NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
     "codeHash" VARCHAR(255) NOT NULL,
     "isUsed" BOOLEAN NOT NULL DEFAULT false,
-    "usedAt" TIMESTAMP,
-    "createdAt" TIMESTAMP NOT NULL DEFAULT NOW()
+    "usedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create indexes for MfaBackupCode table
 CREATE INDEX "MfaBackupCode_userId_idx" ON "MfaBackupCode"("userId");
 CREATE INDEX "MfaBackupCode_codeHash_idx" ON "MfaBackupCode"("codeHash");
-
--- Add relation from User to ApiKey and MfaBackupCode
--- (These should already exist in the User table if schema was updated)
-
--- Optional: Add unique constraint to prevent duplicate key prefixes
--- ALTER TABLE "ApiKey" ADD CONSTRAINT "ApiKey_keyPrefix_unique" UNIQUE ("keyPrefix");
-
--- Rollback script (if needed):
--- DROP TABLE IF EXISTS "MfaBackupCode";
--- DROP TABLE IF EXISTS "ApiKey";
