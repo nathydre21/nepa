@@ -185,7 +185,7 @@ impl OracleManager {
             .storage()
             .persistent()
             .get(&ORACLE_PRICE_FEEDS)
-            .unwrap_or_else(|| Map::new(&env));
+            .unwrap_or(Map::new(&env));
 
         feeds.set(feed_id, price_feed);
         env.storage().persistent().set(&ORACLE_PRICE_FEEDS, &feeds);
@@ -248,7 +248,7 @@ impl OracleManager {
             .storage()
             .persistent()
             .get(&ORACLE_UTILITY_RATES)
-            .unwrap_or_else(|| Map::new(&env));
+            .unwrap_or(Map::new(&env));
 
         rates.set(rate_id, utility_rate);
         env.storage()
@@ -485,7 +485,7 @@ impl OracleManager {
             .storage()
             .instance()
             .get(&ORACLE_MANUAL_OVERRIDES)
-            .unwrap_or_else(|| Map::new(&env));
+            .unwrap_or(Map::new(&env));
 
         let override_entry = ManualOverride {
             price,
@@ -508,7 +508,7 @@ impl OracleManager {
             .storage()
             .instance()
             .get(&ORACLE_MANUAL_OVERRIDES)
-            .unwrap_or_else(|| Map::new(&env));
+            .unwrap_or(Map::new(&env));
 
         overrides.remove(feed_id);
         env.storage()
@@ -659,7 +659,7 @@ impl OracleManager {
                     .storage()
                     .persistent()
                     .get(&ORACLE_PRICE_FEEDS)
-                    .unwrap_or_else(|| Map::new(&env));
+                    .unwrap_or(Map::new(&env));
 
                 let decimals = feeds.get(feed_id.clone()).map(|f| f.decimals).unwrap_or(8); // Default to 8 decimals if unknown
 
