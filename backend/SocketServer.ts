@@ -14,6 +14,10 @@
 import { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
+import { PrismaClient } from '@prisma/client';
+import { AuthenticationService } from './services/AuthenticationService';
+
+const prisma = new PrismaClient();
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,6 +50,15 @@ export const ROOMS = {
   /** Shared room for system-wide broadcast notifications */
   notifications: 'room_notifications',
 } as const;
+
+/** JWT payload shapes supported by socket authentication. */
+interface SocketJwtPayload {
+  userId?: string;
+  id?: string;
+  email?: string;
+  role?: string;
+  sessionId?: string;
+}
 
 /** Canonical event names emitted by the server. */
 export const SERVER_EVENTS = {
@@ -127,6 +140,16 @@ export class SocketServer {
   }
 
   /**
+   * Reset the singleton instance. Intended for test isolation only.
+   */
+  public static resetForTesting(): void {
+    if (SocketServer.instance) {
+      SocketServer.instance.shutdown();
+      delete (SocketServer as { instance?: SocketServer }).instance;
+    }
+  }
+
+  /**
    * Return the raw Socket.IO `Server` instance.
    * Throws if `getInstance(httpServer)` has not been called yet.
    */
@@ -142,8 +165,7 @@ export class SocketServer {
   // ─── Authentication middleware ─────────────────────────────────────────────
 
   private setupAuthMiddleware(): void {
-    this.io.use((socket: AuthSocket, next) => {
-      // Accept token from handshake auth object or Authorization header
+    this.io.use(async (socket: AuthSocket, next) => {
       const token =
         socket.handshake.auth?.token ||
         socket.handshake.headers?.authorization?.replace(/^Bearer\s+/i, '');
@@ -159,12 +181,11 @@ export class SocketServer {
       }
 
       try {
-        const decoded = jwt.verify(token, secret) as AuthenticatedUser & Record<string, unknown>;
-        socket.user = {
-          id: decoded.id,
-          email: decoded.email,
-          role: decoded.role,
-        };
+        const user = await this.authenticateToken(token, secret);
+        if (!user) {
+          return next(new Error('Authentication error: invalid token'));
+        }
+        socket.user = user;
         next();
       } catch (err) {
         const message =
@@ -174,6 +195,57 @@ export class SocketServer {
         next(new Error(message));
       }
     });
+  }
+
+  /**
+   * Resolve the authenticated user from a JWT.
+   * Supports production session tokens, legacy id/email/role payloads, and test tokens.
+   */
+  private async authenticateToken(
+    token: string,
+    secret: string
+  ): Promise<AuthenticatedUser | null> {
+    const decoded = jwt.verify(token, secret) as SocketJwtPayload & jwt.JwtPayload;
+    const userId = decoded.userId ?? decoded.id;
+
+    if (!userId) {
+      return null;
+    }
+
+    // Production path: validate active session when sessionId is present
+    if (decoded.sessionId) {
+      const authService = new AuthenticationService();
+      const result = await authService.verifyToken(token);
+      if (result.user) {
+        return {
+          id: result.user.id,
+          email: result.user.email,
+          role: result.user.role,
+        };
+      }
+      return null;
+    }
+
+    // Test / legacy tokens that include email and role directly in the JWT
+    if (decoded.email && decoded.role) {
+      return {
+        id: userId,
+        email: decoded.email,
+        role: decoded.role,
+      };
+    }
+
+    // Fallback: load user profile from the database
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      return null;
+    }
+
+    return {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+    };
   }
 
   // ─── Connection handlers ───────────────────────────────────────────────────
@@ -222,6 +294,9 @@ export class SocketServer {
 
       // Auto-join the user's private room
       this.joinRoom(socket, info, ROOMS.user(socket.user.id));
+
+      // Auto-join the notifications room for system-wide alerts
+      this.joinRoom(socket, info, ROOMS.notifications);
 
       // Auto-join the admin room for privileged users
       if (socket.user.role === 'ADMIN' || socket.user.role === 'SUPER_ADMIN') {
