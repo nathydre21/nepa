@@ -725,7 +725,6 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde-json-core",
- "soroban-fixed-point-math",
  "soroban-sdk",
 ]
 
@@ -1156,15 +1155,6 @@ dependencies = [
  "serde_json",
  "stellar-xdr",
  "syn",
-]
-
-[[package]]
-name = "soroban-fixed-point-math"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "230e5902daf9de6e7591aa7864dcf763ff96914a4460a0294a5dfd62b3181e0f"
-dependencies = [
- "soroban-sdk",
 ]
 
 [[package]]
