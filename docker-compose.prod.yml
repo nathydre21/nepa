@@ -1,0 +1,132 @@
+# NEPA — production stack.
+#
+# Primary application tier: backend (Express/Socket.IO/Prisma) + frontend
+# (nginx-served SPA that proxies /api and /socket.io to the backend) backed by
+# PostgreSQL and Redis.
+#
+# Image tags are parameterised (IMAGE_TAG) so deploy/deploy.sh can roll forward
+# and — on a failed health gate — roll straight back to the previous tag. The
+# nepa.image.tag label lets the deploy script discover the currently-running
+# tag for that rollback.
+#
+# The per-microservice database fleet (ports 5432-5439) is a separate concern;
+# see backend/docker/docker-compose.databases.yml. This file provisions the one
+# primary database the main server needs via DATABASE_URL.
+#
+# Required env (see deploy/.env.staging.example / deploy/.env.production.example):
+#   POSTGRES_PASSWORD, JWT_SECRET, STELLAR_NETWORK, IMAGE_TAG, …
+
+name: nepa-prod
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: nepa-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-nepa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-nepa}
+    volumes:
+      - nepa-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nepa} -d ${POSTGRES_DB:-nepa}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    networks: [nepa-network]
+
+  redis:
+    image: redis:7-alpine
+    container_name: nepa-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - nepa-redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    networks: [nepa-network]
+
+  backend:
+    image: ${BACKEND_IMAGE:-ghcr.io/nathydre21/nepa-backend}:${IMAGE_TAG:-latest}
+    container_name: nepa-backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-nepa}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-nepa}?schema=public}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      STELLAR_NETWORK: ${STELLAR_NETWORK:-testnet}
+    labels:
+      # Read by deploy/deploy.sh to know which tag to roll back to.
+      - "nepa.image.tag=${IMAGE_TAG:-latest}"
+    expose:
+      - "3001"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+    networks: [nepa-network]
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-ghcr.io/nathydre21/nepa-frontend}:${IMAGE_TAG:-latest}
+    container_name: nepa-frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-/api}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    labels:
+      - "nepa.image.tag=${IMAGE_TAG:-latest}"
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+    networks: [nepa-network]
+
+volumes:
+  nepa-pgdata:
+  nepa-redisdata:
+
+networks:
+  nepa-network:
+    driver: bridge
