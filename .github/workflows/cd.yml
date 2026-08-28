@@ -1,0 +1,358 @@
+name: CD — build, deploy, rollback
+
+# Continuous delivery for NEPA.
+#
+#   push → main            → build images, deploy to STAGING  (Stellar testnet)
+#   push → tag v*.*.*      → build images, deploy to PRODUCTION (Stellar mainnet)
+#   pull_request (deploy/  → lint the deployment artifacts only (no build/push)
+#     infra paths)
+#   workflow_dispatch      → manual deploy or rollback of a chosen environment/tag
+#
+# Images are published to GHCR as ghcr.io/<owner>/nepa-{backend,frontend,contract}.
+# Actual host deploys run over SSH and are GATED on the *_SSH_HOST secret: with no
+# infrastructure configured the deploy jobs fall back to a validated dry-run so the
+# pipeline stays green and reviewable. Rolling update + automatic rollback live in
+# deploy/deploy.sh; this workflow orchestrates when they run.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+  pull_request:
+    paths:
+      - '.github/workflows/cd.yml'
+      - 'docker-compose.prod.yml'
+      - 'deploy/**'
+      - 'backend/Dockerfile'
+      - 'backend/.dockerignore'
+      - 'frontend/Dockerfile'
+      - 'frontend/nginx.conf'
+      - 'frontend/.dockerignore'
+      - 'contract/Dockerfile'
+      - 'contract/docker-entrypoint.sh'
+      - 'contract/.dockerignore'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [staging, production]
+        default: staging
+      action:
+        description: Deploy the selected tag, or roll back to it
+        type: choice
+        options: [deploy, rollback]
+        default: deploy
+      image_tag:
+        description: Image tag to deploy/rollback to (default = this commit)
+        type: string
+        required: false
+        default: ''
+
+# Read the repo; write packages (GHCR). On PRs from forks the token is read-only,
+# which is fine — no build/push job runs on pull_request.
+permissions:
+  contents: read
+  packages: write
+
+# Never cancel an in-flight deploy: interrupting docker compose mid-roll could leave
+# a half-updated stack. Serialize per environment instead.
+concurrency:
+  group: cd-${{ github.workflow }}-${{ github.event.inputs.environment || github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  # ── 1. Lint every deployment artifact (runs on all events, including PRs) ─────
+  validate:
+    name: Validate deployment artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint Dockerfiles (hadolint)
+        run: |
+          for df in backend/Dockerfile frontend/Dockerfile contract/Dockerfile; do
+            echo "== hadolint ${df} =="
+            docker run --rm -i hadolint/hadolint:2.12.0 \
+              hadolint --failure-threshold error - < "${df}"
+          done
+
+      - name: Lint shell scripts (shellcheck)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck -S warning \
+            deploy/deploy.sh \
+            deploy/rollback.sh \
+            deploy/notify.sh \
+            contract/docker-entrypoint.sh
+
+      - name: Validate production compose file
+        run: |
+          cp deploy/.env.staging.example .env
+          docker compose -f docker-compose.prod.yml config -q
+          echo "docker-compose.prod.yml is valid"
+
+      - name: Lint this workflow (actionlint)
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.1 \
+            -color .github/workflows/cd.yml
+
+  # ── 2. Resolve the single image tag shared by every service for this run ─────
+  setup:
+    name: Resolve image tag
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.tag.outputs.image_tag }}
+    steps:
+      - id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.image_tag }}" ]; then
+            tag="${{ github.event.inputs.image_tag }}"
+          elif [ "${{ startsWith(github.ref, 'refs/tags/') }}" = "true" ]; then
+            tag="${GITHUB_REF_NAME}"
+          else
+            tag="sha-${GITHUB_SHA::12}"
+          fi
+          echo "image_tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "Resolved image tag: ${tag}"
+
+  # ── 3. Build & push backend + frontend images (skipped on PRs and rollbacks) ─
+  build-app:
+    name: Build ${{ matrix.service }} image
+    needs: [validate, setup]
+    if: >-
+      github.event_name != 'pull_request' &&
+      !(github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'rollback')
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Lowercase owner
+        id: owner
+        run: echo "name=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.service }}
+          file: ./${{ matrix.service }}/Dockerfile
+          push: true
+          build-args: ${{ matrix.service == 'frontend' && 'VITE_API_URL=/api' || '' }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.name }}/nepa-${{ matrix.service }}:${{ needs.setup.outputs.image_tag }}
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.name }}/nepa-${{ matrix.service }}:latest
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,scope=${{ matrix.service }},mode=max
+
+  # ── 3b. Build & push the Soroban contract image (production releases only) ───
+  build-contract:
+    name: Build contract image
+    needs: [validate, setup]
+    if: >-
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production' && github.event.inputs.action == 'deploy')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Lowercase owner
+        id: owner
+        run: echo "name=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./contract
+          file: ./contract/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.name }}/nepa-contract:${{ needs.setup.outputs.image_tag }}
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.name }}/nepa-contract:latest
+          cache-from: type=gha,scope=contract
+          cache-to: type=gha,scope=contract,mode=max
+
+  # ── 4. Deploy to STAGING (main pushes + manual staging deploys) ─────────────
+  deploy-staging:
+    name: Deploy → staging (testnet)
+    needs: [setup, build-app]
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging' && github.event.inputs.action == 'deploy')
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      DEPLOY_ENV: staging
+      STELLAR_NETWORK: testnet
+      IMAGE_TAG: ${{ needs.setup.outputs.image_tag }}
+      DEPLOY_PATH: ${{ secrets.STAGING_DEPLOY_PATH }}
+      HAVE_SSH: ${{ secrets.STAGING_SSH_HOST != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rolling deploy over SSH (auto-rollback on failed health gate)
+        if: env.HAVE_SSH == 'true'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.STAGING_SSH_HOST }}
+          username: ${{ secrets.STAGING_SSH_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          envs: IMAGE_TAG,STELLAR_NETWORK,DEPLOY_ENV,DEPLOY_PATH
+          script: |
+            set -euo pipefail
+            cd "${DEPLOY_PATH:-/opt/nepa}"
+            git fetch --all --prune --tags
+            git checkout --detach "${IMAGE_TAG#sha-}" 2>/dev/null || git pull --ff-only
+            bash deploy/deploy.sh "${DEPLOY_ENV}" "${IMAGE_TAG}"
+
+      - name: Dry-run (no STAGING_SSH_HOST configured)
+        if: env.HAVE_SSH != 'true'
+        run: |
+          echo "::notice::No STAGING_SSH_HOST secret — validating the plan instead of deploying."
+          cp deploy/.env.staging.example .env
+          docker compose -f docker-compose.prod.yml config -q
+          echo "Would run on the staging host: deploy/deploy.sh staging ${IMAGE_TAG}"
+          echo "  → rolling update to ${IMAGE_TAG}, health-gated, auto-rollback on failure"
+          echo "  → STELLAR_NETWORK=${STELLAR_NETWORK}"
+
+      - name: Notify deployment result
+        if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          WEBHOOK_ALERT_URL: ${{ secrets.WEBHOOK_ALERT_URL }}
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then st=success; else st=failure; fi
+          bash deploy/notify.sh "$st" "staging deploy @ ${IMAGE_TAG} (${GITHUB_SHA::12})"
+
+  # ── 5. Deploy to PRODUCTION (release tags + manual production deploys) ───────
+  deploy-production:
+    name: Deploy → production (mainnet)
+    needs: [setup, build-app, build-contract]
+    if: >-
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production' && github.event.inputs.action == 'deploy')
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      DEPLOY_ENV: production
+      STELLAR_NETWORK: mainnet
+      IMAGE_TAG: ${{ needs.setup.outputs.image_tag }}
+      DEPLOY_PATH: ${{ secrets.PRODUCTION_DEPLOY_PATH }}
+      HAVE_SSH: ${{ secrets.PRODUCTION_SSH_HOST != '' }}
+      HAVE_CONTRACT_SECRET: ${{ secrets.STELLAR_SECRET_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rolling deploy over SSH (auto-rollback on failed health gate)
+        if: env.HAVE_SSH == 'true'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PRODUCTION_SSH_HOST }}
+          username: ${{ secrets.PRODUCTION_SSH_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          envs: IMAGE_TAG,STELLAR_NETWORK,DEPLOY_ENV,DEPLOY_PATH
+          script: |
+            set -euo pipefail
+            cd "${DEPLOY_PATH:-/opt/nepa}"
+            git fetch --all --prune --tags
+            git checkout --detach "${IMAGE_TAG}" 2>/dev/null || git checkout --detach "${IMAGE_TAG#sha-}"
+            # NOTE: database migrations are an operator-gated step — see docs/DEPLOYMENT.md.
+            bash deploy/deploy.sh "${DEPLOY_ENV}" "${IMAGE_TAG}"
+
+      - name: Deploy contract to mainnet (only when STELLAR_SECRET_KEY is set)
+        if: env.HAVE_SSH == 'true' && env.HAVE_CONTRACT_SECRET == 'true'
+        env:
+          STELLAR_SECRET_KEY: ${{ secrets.STELLAR_SECRET_KEY }}
+        run: |
+          echo "::notice::Publishing contract image ${IMAGE_TAG} to mainnet"
+          docker run --rm \
+            -e STELLAR_NETWORK=mainnet \
+            -e STELLAR_SECRET_KEY \
+            "${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/nepa-contract:${IMAGE_TAG}" deploy
+
+      - name: Dry-run (no PRODUCTION_SSH_HOST configured)
+        if: env.HAVE_SSH != 'true'
+        run: |
+          echo "::notice::No PRODUCTION_SSH_HOST secret — validating the plan instead of deploying."
+          cp deploy/.env.production.example .env
+          docker compose -f docker-compose.prod.yml config -q
+          echo "Would run on the production host: deploy/deploy.sh production ${IMAGE_TAG}"
+          echo "  → rolling update to ${IMAGE_TAG}, health-gated, auto-rollback on failure"
+          echo "  → STELLAR_NETWORK=${STELLAR_NETWORK}; contract deploy gated on STELLAR_SECRET_KEY"
+
+      - name: Notify deployment result
+        if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          WEBHOOK_ALERT_URL: ${{ secrets.WEBHOOK_ALERT_URL }}
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then st=success; else st=failure; fi
+          bash deploy/notify.sh "$st" "production deploy @ ${IMAGE_TAG} (${GITHUB_SHA::12})"
+
+  # ── 6. Manual rollback (workflow_dispatch → action: rollback) ───────────────
+  rollback:
+    name: Rollback ${{ github.event.inputs.environment }}
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'rollback'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    env:
+      DEPLOY_ENV: ${{ github.event.inputs.environment }}
+      ROLLBACK_TAG: ${{ github.event.inputs.image_tag }}
+      HAVE_SSH: ${{ secrets.STAGING_SSH_HOST != '' || secrets.PRODUCTION_SSH_HOST != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Guard — a target tag is required
+        run: |
+          if [ -z "${ROLLBACK_TAG}" ]; then
+            echo "::error::Rollback requires the image_tag input (the last known-good tag)."
+            exit 1
+          fi
+
+      - name: Roll back over SSH
+        if: env.HAVE_SSH == 'true'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ github.event.inputs.environment == 'production' && secrets.PRODUCTION_SSH_HOST || secrets.STAGING_SSH_HOST }}
+          username: ${{ github.event.inputs.environment == 'production' && secrets.PRODUCTION_SSH_USER || secrets.STAGING_SSH_USER }}
+          key: ${{ github.event.inputs.environment == 'production' && secrets.PRODUCTION_SSH_KEY || secrets.STAGING_SSH_KEY }}
+          envs: DEPLOY_ENV,ROLLBACK_TAG
+          script: |
+            set -euo pipefail
+            cd "${DEPLOY_PATH:-/opt/nepa}"
+            bash deploy/rollback.sh "${DEPLOY_ENV}" "${ROLLBACK_TAG}"
+
+      - name: Dry-run (no SSH host configured)
+        if: env.HAVE_SSH != 'true'
+        run: |
+          echo "::notice::No SSH host secret — showing the rollback plan."
+          echo "Would run: deploy/rollback.sh ${DEPLOY_ENV} ${ROLLBACK_TAG}"
+
+      - name: Notify rollback result
+        if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          WEBHOOK_ALERT_URL: ${{ secrets.WEBHOOK_ALERT_URL }}
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then st=success; else st=failure; fi
+          bash deploy/notify.sh "$st" "${DEPLOY_ENV} ROLLBACK → ${ROLLBACK_TAG}"
