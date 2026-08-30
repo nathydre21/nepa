@@ -13,6 +13,8 @@ const PRISMA_TABLES = [
   'utility_providers',
   'bills',
   'payments',
+  'notifications',
+  'notification_preferences',
   '_prisma_migrations',
 ];
 
