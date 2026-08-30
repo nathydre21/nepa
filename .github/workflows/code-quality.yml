@@ -35,7 +35,7 @@ jobs:
       - name: Install dependencies
         run: cd backend && npm install
       - name: Generate Prisma client
-        run: cd backend && npx prisma generate || true
+        run: cd backend && npx prisma generate --schema=./prisma/schema.prisma || true
       - name: Run tests with coverage
         run: cd backend && npm run test:coverage || echo "⚠️ Coverage warnings (non-blocking)"
         env:
