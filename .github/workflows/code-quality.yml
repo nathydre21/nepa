@@ -10,10 +10,14 @@ on:
 permissions:
   contents: read
   checks: write
+  pull-requests: write
 
 concurrency:
   group: quality-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  COVERAGE_TARGET: '70'
 
 jobs:
   # ---------------------------------------------------------------
@@ -36,20 +40,10 @@ jobs:
         run: cd backend && npm run test:coverage || echo "⚠️ Coverage warnings (non-blocking)"
         env:
           NODE_ENV: test
-      - name: Check coverage threshold
+      - name: Enforce minimum coverage threshold (70%)
         run: |
           cd backend
-          if [ -f coverage/coverage-summary.json ]; then
-            COVERAGE=$(node -pe "Math.round(JSON.parse(require('fs').readFileSync('coverage/coverage-summary.json', 'utf8')).total.lines.pct)")
-            echo "Backend line coverage: ${COVERAGE}%"
-            if [ "$COVERAGE" -lt 50 ]; then
-              echo "::error::Backend coverage ${COVERAGE}% is below 50% threshold"
-              exit 1
-            fi
-            echo "✅ Backend coverage ${COVERAGE}% meets threshold"
-          else
-            echo "::warning::No coverage summary found"
-          fi
+          node ../scripts/check-coverage.mjs "${{ env.COVERAGE_TARGET }}"
       - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -57,6 +51,16 @@ jobs:
           name: backend-quality-coverage
           path: backend/coverage/
           retention-days: 30
+      - name: Upload to Codecov
+        if: always()
+        uses: codecov/codecov-action@v4
+        continue-on-error: true
+        with:
+          files: backend/coverage/lcov.info
+          flags: backend
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+          verbose: true
 
   # ---------------------------------------------------------------
   # Frontend coverage + quality
@@ -75,20 +79,10 @@ jobs:
       - name: Run tests with coverage
         continue-on-error: true
         run: cd frontend && npm run test:coverage || echo "⚠️ Coverage warnings (non-blocking)"
-      - name: Check coverage threshold
+      - name: Enforce minimum coverage threshold (70%)
         run: |
           cd frontend
-          if [ -f coverage/coverage-summary.json ]; then
-            COVERAGE=$(node -pe "Math.round(JSON.parse(require('fs').readFileSync('coverage/coverage-summary.json', 'utf8')).total.lines.pct)")
-            echo "Frontend line coverage: ${COVERAGE}%"
-            if [ "$COVERAGE" -lt 15 ]; then
-              echo "::error::Frontend coverage ${COVERAGE}% is below 50% threshold"
-              exit 1
-            fi
-            echo "✅ Frontend coverage ${COVERAGE}% meets threshold"
-          else
-            echo "::warning::No coverage summary found"
-          fi
+          node ../scripts/check-coverage.mjs "${{ env.COVERAGE_TARGET }}"
       - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -96,6 +90,70 @@ jobs:
           name: frontend-quality-coverage
           path: frontend/coverage/
           retention-days: 30
+      - name: Upload to Codecov
+        if: always()
+        uses: codecov/codecov-action@v4
+        continue-on-error: true
+        with:
+          files: frontend/coverage/lcov.info
+          flags: frontend
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+          verbose: true
+
+  # ---------------------------------------------------------------
+  # Coverage trend reporting
+  # ---------------------------------------------------------------
+  coverage-trend:
+    name: Coverage Trend Report
+    runs-on: ubuntu-latest
+    needs: [backend-quality, frontend-quality]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download backend coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-quality-coverage
+          path: coverage/backend
+        continue-on-error: true
+      - name: Download frontend coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-quality-coverage
+          path: coverage/frontend
+        continue-on-error: true
+      - name: Restore coverage history
+        id: trend_cache
+        uses: actions/cache@v4
+        with:
+          path: coverage-trend-history.json
+          key: coverage-trend-${{ github.ref_name }}-${{ github.run_number }}
+          restore-keys: |
+            coverage-trend-${{ github.ref_name }}-
+      - name: Generate coverage trend report
+        run: node scripts/coverage-trend.mjs "${{ env.COVERAGE_TARGET }}"
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_STEP_SUMMARY: ${{ GITHUB_STEP_SUMMARY }}
+      - name: Save updated coverage history
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: coverage-trend-history.json
+          key: coverage-trend-${{ github.ref_name }}-${{ github.run_number }}
+      - name: Upload trend report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-trend-report
+          path: |
+            coverage-trend.json
+            coverage-trend-history.json
+            coverage-trend.md
+          retention-days: 90
 
   # ---------------------------------------------------------------
   # Code format check (non-blocking lint)
@@ -119,3 +177,25 @@ jobs:
           cd frontend
           npm install
           npm run lint || echo "⚠️ Frontend lint warnings (non-blocking)"
+
+  # ---------------------------------------------------------------
+  # Summary gate — all jobs must pass
+  # ---------------------------------------------------------------
+  quality-summary:
+    name: Quality Summary
+    runs-on: ubuntu-latest
+    needs: [backend-quality, frontend-quality, format-check]
+    if: always()
+    steps:
+      - name: Check results
+        run: |
+          echo "Backend Coverage: ${{ needs.backend-quality.result }}"
+          echo "Frontend Coverage: ${{ needs.frontend-quality.result }}"
+          echo "Format Check: ${{ needs.format-check.result }}"
+          if [[ "${{ needs.backend-quality.result }}" != "success" || \
+                "${{ needs.frontend-quality.result }}" != "success" || \
+                "${{ needs.format-check.result }}" != "success" ]]; then
+            echo "::error::One or more code-quality jobs failed"
+            exit 1
+          fi
+          echo "✅ All code-quality jobs passed"

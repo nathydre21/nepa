@@ -1,0 +1,58 @@
+codecov:
+  require_ci_to_pass: true
+  max_report_age: off
+
+coverage:
+  precision: 2
+  round: down
+  range: 50..90
+
+  status:
+    project:
+      default:
+        target: 70%
+        threshold: 1%
+        if_ci_failed: error
+      backend:
+        target: 70%
+        threshold: 1%
+        flags:
+          - backend
+      frontend:
+        target: 70%
+        threshold: 1%
+        flags:
+          - frontend
+    patch:
+      default:
+        target: 70%
+        threshold: 5%
+        only_pulls: true
+
+flags:
+  backend:
+    paths:
+      - backend/
+    carryforward: true
+  frontend:
+    paths:
+      - frontend/
+    carryforward: true
+
+comment:
+  layout: reach, diff, flags, files, footer
+  behavior: default
+  require_changes: false
+  require_base: false
+  require_head: true
+
+ignore:
+  - '**/*.d.ts'
+  - '**/dist/**'
+  - '**/build/**'
+  - '**/node_modules/**'
+  - 'backend/tests/**'
+  - 'backend/scripts/**'
+  - 'frontend/src/setupTests.ts'
+  - 'frontend/src/assets/**'
+  - 'frontend/src/contracts/**'

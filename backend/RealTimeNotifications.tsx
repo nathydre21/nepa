@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { useSocket } from '../hooks/useSocket';
+import { useSocket } from './useSocket';
 import { toast } from 'react-hot-toast'; // Assuming react-hot-toast is used
 
 interface Props {

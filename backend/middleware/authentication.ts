@@ -257,3 +257,135 @@ export const optionalAuth = async (req: AuthenticatedRequest, res: Response, nex
 
 // Alias for authenticate function for compatibility
 export const authenticateToken = authenticate;
+
+// 2FA Middleware
+export const requireTwoFactor = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    // Check if user has 2FA enabled
+    if (!req.user.twoFactorEnabled) {
+      return res.status(403).json({ 
+        error: 'Two-factor authentication not enabled',
+        requiresTwoFactorSetup: true
+      });
+    }
+
+    // Check if 2FA code is provided in headers
+    const twoFactorCode = req.headers['x-2fa-code'] as string;
+    
+    if (!twoFactorCode) {
+      return res.status(403).json({ 
+        error: 'Two-factor authentication code required',
+        requiresTwoFactorCode: true
+      });
+    }
+
+    // Verify 2FA code using the authentication service
+    const authService = new AuthenticationService();
+    const isValid = await authService.verifyTwoFactor(req.user, twoFactorCode);
+
+    if (!isValid) {
+      return res.status(403).json({ 
+        error: 'Invalid two-factor authentication code'
+      });
+    }
+
+    next();
+  } catch (error) {
+    console.error('2FA verification error:', error);
+    return res.status(500).json({ error: 'Two-factor authentication verification failed' });
+  }
+};
+
+// Optional 2FA middleware - allows access if 2FA is not enabled, requires it if enabled
+export const optionalTwoFactor = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    // If user doesn't have 2FA enabled, allow access
+    if (!req.user.twoFactorEnabled) {
+      return next();
+    }
+
+    // If 2FA is enabled, require verification
+    const twoFactorCode = req.headers['x-2fa-code'] as string;
+    
+    if (!twoFactorCode) {
+      return res.status(403).json({ 
+        error: 'Two-factor authentication code required',
+        requiresTwoFactorCode: true
+      });
+    }
+
+    const authService = new AuthenticationService();
+    const isValid = await authService.verifyTwoFactor(req.user, twoFactorCode);
+
+    if (!isValid) {
+      return res.status(403).json({ 
+        error: 'Invalid two-factor authentication code'
+      });
+    }
+
+    next();
+  } catch (error) {
+    console.error('2FA verification error:', error);
+    return res.status(500).json({ error: 'Two-factor authentication verification failed' });
+  }
+};
+
+// Require 2FA for sensitive operations (can be combined with other middleware)
+export const requireTwoFactorForSensitive = (sensitiveActions: string[] = []) => {
+  return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      // Check if current action is considered sensitive
+      const currentAction = req.method.toLowerCase() + req.path;
+      const isSensitive = sensitiveActions.some(action => 
+        currentAction.includes(action.toLowerCase())
+      );
+
+      if (!isSensitive) {
+        return next();
+      }
+
+      // For sensitive actions, require 2FA
+      if (!req.user.twoFactorEnabled) {
+        return res.status(403).json({ 
+          error: 'Two-factor authentication required for this operation',
+          requiresTwoFactorSetup: true
+        });
+      }
+
+      const twoFactorCode = req.headers['x-2fa-code'] as string;
+      
+      if (!twoFactorCode) {
+        return res.status(403).json({ 
+          error: 'Two-factor authentication code required for this operation',
+          requiresTwoFactorCode: true
+        });
+      }
+
+      const authService = new AuthenticationService();
+      const isValid = await authService.verifyTwoFactor(req.user, twoFactorCode);
+
+      if (!isValid) {
+        return res.status(403).json({ 
+          error: 'Invalid two-factor authentication code'
+        });
+      }
+
+      next();
+    } catch (error) {
+      console.error('2FA verification error:', error);
+      return res.status(500).json({ error: 'Two-factor authentication verification failed' });
+    }
+  };
+};

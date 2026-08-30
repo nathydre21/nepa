@@ -2,7 +2,24 @@
 
 > Decentralized utility payment platform powered by Stellar blockchain
 
+[![CI Pipeline](https://github.com/DevScoopee/nepa/actions/workflows/ci.yml/badge.svg)](https://github.com/DevScoopee/nepa/actions/workflows/ci.yml)
+[![Code Quality](https://github.com/DevScoopee/nepa/actions/workflows/code-quality.yml/badge.svg)](https://github.com/DevScoopee/nepa/actions/workflows/code-quality.yml)
+[![Backend Coverage](https://codecov.io/github/DevScoopee/nepa/branch/main/graph/badge.svg?flag=backend)](https://codecov.io/github/DevScoopee/nepa)
+[![Frontend Coverage](https://codecov.io/github/DevScoopee/nepa/branch/main/graph/badge.svg?flag=frontend)](https://codecov.io/github/DevScoopee/nepa)
+[![codecov](https://codecov.io/github/DevScoopee/nepa/branch/main/graph/badge.svg)](https://codecov.io/github/DevScoopee/nepa)
+
 A modern microservices platform enabling seamless electricity and water bill payments through blockchain technology.
+
+## 📊 Code Coverage
+
+Minimum coverage threshold: **70%** (lines, statements, functions, branches) enforced in CI via Jest `coverageThreshold` and [Codecov](https://codecov.io/github/DevScoopee/nepa).
+
+| Area | Command | Report |
+|------|---------|--------|
+| Backend | `cd backend && npm run test:coverage` | `backend/coverage/lcov-report/index.html` |
+| Frontend | `cd frontend && npm run test:coverage` | `frontend/coverage/lcov-report/index.html` |
+
+Coverage trends are reported on every CI run (see the **Coverage Trend Report** job summary) and tracked historically on Codecov.
 
 ## 🏗️ Project Structure
 

@@ -29,6 +29,23 @@ enum TwoFactorMethod {
   AUTHENTICATOR_APP
 }
 
+enum ResourceType {
+  USER
+  BILL
+  PAYMENT
+  AUDIT
+  SYSTEM
+}
+
+enum PermissionScope {
+  READ
+  WRITE
+  DELETE
+  ADMIN
+  GLOBAL
+  PERSONAL
+}
+
 model User {
   id                String           @id @default(uuid())
   email             String           @unique
@@ -54,6 +71,7 @@ model User {
   sessions          UserSession[]
   profiles          UserProfile[]
   auditLogs         AuditLog[]
+  roleAssignments   UserRoleAssignment[]
 
   @@index([email])
   @@index([username])
@@ -119,9 +137,9 @@ model AuditLog {
   ipAddress String?
   userAgent String?
   createdAt DateTime @default(now())
-  
+
   user      User?    @relation(fields: [userId], references: [id])
-  
+
   @@index([userId])
   @@index([action])
   @@index([createdAt])
@@ -129,4 +147,95 @@ model AuditLog {
   @@index([action, createdAt])
   @@index([resource, resourceId])
   @@index([severity, status])
+}
+
+// RBAC Models
+model Role {
+  id          String           @id @default(uuid())
+  name        String           @unique
+  description String?
+  scope       PermissionScope  @default(GLOBAL)
+  isSystem    Boolean          @default(false)
+  isActive    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  permissions RolePermission[]
+  userAssignments UserRoleAssignment[]
+
+  @@index([name])
+  @@index([scope])
+  @@index([isActive])
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  name        String           @unique
+  description String?
+  resource    ResourceType
+  action      String
+  scope       PermissionScope  @default(GLOBAL)
+  isSystem    Boolean          @default(false)
+  isActive    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  rolePermissions RolePermission[]
+
+  @@index([name])
+  @@index([resource])
+  @@index([action])
+  @@index([scope])
+  @@index([isActive])
+  @@index([resource, action])
+}
+
+model RolePermission {
+  id           String     @id @default(uuid())
+  roleId       String
+  permissionId String
+  createdAt    DateTime   @default(now())
+
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+}
+
+model UserRoleAssignment {
+  id        String   @id @default(uuid())
+  userId    String
+  roleId    String
+  assignedBy String
+  isActive  Boolean  @default(true)
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+  @@index([isActive])
+  @@index([expiresAt])
+  @@index([userId, isActive])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  isUsed    Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([token])
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([isUsed])
 }
