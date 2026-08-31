@@ -22,6 +22,9 @@ paths = [
   '''.env.example''',
   '''backend/.env.example''',
   '''docs/.*''',
+  '''backend/AUTH_FLOW_DOCUMENTATION\.md''',
+  '''backend/scripts/ci-.*''',
+  '''\.github/workflows/ci\.yml''',
   '''CACHE_IMPLEMENTATION_COMPLETE\.md''',
   '''EXPORT_SYSTEM_README\.md''',
 ]

@@ -1,11 +1,11 @@
-use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, Symbol, Vec};
+use soroban_sdk::{contracttype, symbol_short, Address, BytesN, Env, Map, Symbol, Vec};
 
-#[contracttype]
 #[derive(Clone)]
+#[contracttype]
 pub struct MigrationScript {
     pub from_version: u32,
     pub to_version: u32,
-    pub script_hash: soroban_sdk::BytesN<32>,
+    pub script_hash: BytesN<32>,
     pub description: Symbol,
 }
 
@@ -22,17 +22,16 @@ impl DataMigration {
         let migration_scripts: Map<u32, Vec<MigrationScript>> = Map::new(&env);
         env.storage()
             .instance()
-            .set(&symbol_short!("MIGR"), &migration_scripts);
+            .set(&symbol_short!("MIGS"), &migration_scripts);
     }
 
     /// Register a migration script
-    #[allow(dead_code)]
     pub fn register_migration_script(
         env: Env,
         admin: Address,
         from_version: u32,
         to_version: u32,
-        script_hash: soroban_sdk::BytesN<32>,
+        script_hash: BytesN<32>,
         description: Symbol,
     ) -> Result<(), Symbol> {
         // Verify admin
@@ -58,10 +57,10 @@ impl DataMigration {
         let mut migrations: Map<u32, Vec<MigrationScript>> = env
             .storage()
             .instance()
-            .get(&symbol_short!("MIGR"))
-            .unwrap_or_else(|| Map::new(&env));
+            .get(&symbol_short!("MIGS"))
+            .unwrap_or(Map::new(&env));
 
-        let version_migrations = migrations.get(to_version).unwrap_or_else(|| Vec::new(&env));
+        let version_migrations = migrations.get(to_version).unwrap_or(Vec::new(&env));
 
         // Add new migration script
         let mut updated_migrations = version_migrations;
@@ -71,7 +70,7 @@ impl DataMigration {
         // Store updated migrations
         env.storage()
             .instance()
-            .set(&symbol_short!("MIGR"), &migrations);
+            .set(&symbol_short!("MIGS"), &migrations);
 
         // Emit registration event
         env.events().publish(
@@ -87,10 +86,10 @@ impl DataMigration {
         let migrations: Map<u32, Vec<MigrationScript>> = env
             .storage()
             .instance()
-            .get(&symbol_short!("MIGR"))
-            .unwrap_or_else(|| Map::new(&env));
+            .get(&symbol_short!("MIGS"))
+            .unwrap_or(Map::new(&env));
 
-        migrations.get(to_version).unwrap_or_else(|| Vec::new(&env))
+        migrations.get(to_version).unwrap_or(Vec::new(&env))
     }
 
     /// Execute migration for a specific upgrade path
@@ -136,7 +135,7 @@ impl DataMigration {
         }
 
         if !migration_found {
-            return Err(symbol_short!("MIG_NF"));
+            return Err(symbol_short!("NO_MIG"));
         }
 
         Ok(())
@@ -166,7 +165,7 @@ impl DataMigration {
 
         // For now, we'll emit a backup event
         env.events().publish(
-            (symbol_short!("D_BACKUP"), backup_id.clone()),
+            (symbol_short!("DATA_BKUP"), backup_id.clone()),
             backup_timestamp,
         );
 
@@ -174,7 +173,6 @@ impl DataMigration {
     }
 
     /// Restore data from backup
-    #[allow(dead_code)]
     pub fn restore_data(env: Env, admin: Address, backup_id: Symbol) -> Result<(), Symbol> {
         // Verify admin
         let current_admin = env
@@ -194,7 +192,7 @@ impl DataMigration {
 
         // For now, we'll emit a restore event
         env.events().publish(
-            (symbol_short!("D_RESTORE"), backup_id),
+            (symbol_short!("DATA_RST"), backup_id),
             env.ledger().timestamp(),
         );
 
@@ -202,7 +200,6 @@ impl DataMigration {
     }
 
     /// Get admin
-    #[allow(dead_code)]
     pub fn get_admin(env: Env) -> Address {
         env.storage()
             .instance()

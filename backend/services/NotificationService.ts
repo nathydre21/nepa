@@ -100,12 +100,10 @@ export class RealTimeNotificationService {
       const userId: string | undefined = (socket as any).user?.id;
       if (!userId) return;
 
-      // Deliver any queued notifications immediately on connect
-      const queued = this.notificationQueue.get(userId) ?? [];
-      if (queued.length > 0) {
-        socket.emit('notifications', queued);
-        this.notificationQueue.delete(userId);
-      }
+      // Deliver persisted and queued notifications when the user reconnects
+      this.deliverPendingNotifications(userId, socket).catch((err) => {
+        console.error('[NotificationService] deliverPendingNotifications error:', err);
+      });
 
       // Push current unread count
       this.getUnreadCount(userId).then((count) => {
@@ -204,6 +202,44 @@ export class RealTimeNotificationService {
     notifications: Omit<NotificationData, 'id'>[]
   ): Promise<string[]> {
     return Promise.all(notifications.map((n) => this.sendNotification(n)));
+  }
+
+  /**
+   * Deliver unread notifications from the database plus any in-memory queue
+   * entries that were created while the user was offline in this process.
+   */
+  async deliverPendingNotifications(userId: string, socket: { emit: (event: string, data: unknown) => void }): Promise<void> {
+    const unreadFromDb = await this.getUserNotifications(userId, {
+      unreadOnly: true,
+      limit: 100,
+    });
+
+    const queued = this.notificationQueue.get(userId) ?? [];
+    const seenIds = new Set(unreadFromDb.map((notification) => notification.id));
+    const merged = [
+      ...unreadFromDb,
+      ...queued.filter((notification) => !notification.id || !seenIds.has(notification.id)),
+    ];
+
+    if (merged.length > 0) {
+      socket.emit('notifications', merged);
+    }
+
+    this.notificationQueue.delete(userId);
+  }
+
+  /**
+   * Expose the in-memory offline queue for testing.
+   */
+  getQueuedNotifications(userId: string): NotificationData[] {
+    return [...(this.notificationQueue.get(userId) ?? [])];
+  }
+
+  /**
+   * Reset the in-memory offline queue. Intended for test isolation only.
+   */
+  resetQueueForTesting(): void {
+    this.notificationQueue.clear();
   }
 
   // ─── Database helpers ─────────────────────────────────────────────────────

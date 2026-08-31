@@ -188,8 +188,8 @@ POST /api/auth/login
     "email": "user@example.com",
     "role": "USER"
   },
-  "token": "eyJhbGciOiJIUzI1NiIs...",
-  "refreshToken": "eyJhbGciOiJIUzI1NiIs..."
+  "token": "<access_token>",
+  "refreshToken": "<refresh_token>"
 }
 ```
 
@@ -198,7 +198,7 @@ POST /api/auth/login
 ```typescript
 POST /api/auth/refresh
 {
-  "refreshToken": "eyJhbGciOiJIUzI1NiIs..."
+  "refreshToken": "<refresh_token>"
 }
 ```
 

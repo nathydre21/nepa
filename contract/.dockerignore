@@ -1,0 +1,16 @@
+node_modules
+dist
+coverage
+.env
+.env.*
+!.env.example
+*.log
+.git
+.github
+tests
+**/*.test.ts
+# Rust build output is recompiled inside the image.
+nepa_contract/target
+packages
+Dockerfile
+.dockerignore
