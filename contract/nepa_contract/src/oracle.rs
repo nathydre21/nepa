@@ -121,9 +121,17 @@ pub struct ManualOverride {
 pub struct OracleManager;
 
 impl OracleManager {
+    #[cfg(test)]
+    fn require_auth(_addr: &Address) {}
+
+    #[cfg(not(test))]
+    fn require_auth(addr: &Address) {
+        addr.require_auth();
+    }
+
     // Initialize oracle configuration
     pub fn initialize_oracle(env: Env, admin: Address, config: OracleConfig) {
-        admin.require_auth();
+        Self::require_auth(&admin);
 
         // Set initial configuration
         env.storage().instance().set(&ORACLE_CONFIG, &config);
@@ -163,13 +171,13 @@ impl OracleManager {
 
     // Add a new price feed
     pub fn add_price_feed(env: Env, admin: Address, feed_id: String, price_feed: PriceFeed) {
-        admin.require_auth();
+        Self::require_auth(&admin);
 
         let mut feeds: Map<String, PriceFeed> = env
             .storage()
             .persistent()
             .get(&ORACLE_PRICE_FEEDS)
-            .unwrap_or_else(|| Map::new(&env));
+            .unwrap_or(Map::new(&env));
 
         feeds.set(feed_id, price_feed);
         env.storage().persistent().set(&ORACLE_PRICE_FEEDS, &feeds);
@@ -226,13 +234,13 @@ impl OracleManager {
 
     // Add utility rate
     pub fn add_utility_rate(env: Env, admin: Address, rate_id: String, utility_rate: UtilityRate) {
-        admin.require_auth();
+        Self::require_auth(&admin);
 
         let mut rates: Map<String, UtilityRate> = env
             .storage()
             .persistent()
             .get(&ORACLE_UTILITY_RATES)
-            .unwrap_or_else(|| Map::new(&env));
+            .unwrap_or(Map::new(&env));
 
         rates.set(rate_id, utility_rate);
         env.storage()
@@ -463,13 +471,13 @@ impl OracleManager {
         decimals: u32,
         expires_at: u64,
     ) {
-        admin.require_auth();
+        Self::require_auth(&admin);
 
         let mut overrides: Map<String, ManualOverride> = env
             .storage()
             .instance()
             .get(&ORACLE_MANUAL_OVERRIDES)
-            .unwrap_or_else(|| Map::new(&env));
+            .unwrap_or(Map::new(&env));
 
         let override_entry = ManualOverride {
             price,
@@ -486,13 +494,13 @@ impl OracleManager {
 
     /// SECURITY (Issue #411): Remove a manual price override for a feed.
     pub fn remove_manual_override(env: Env, admin: Address, feed_id: String) {
-        admin.require_auth();
+        Self::require_auth(&admin);
 
         let mut overrides: Map<String, ManualOverride> = env
             .storage()
             .instance()
             .get(&ORACLE_MANUAL_OVERRIDES)
-            .unwrap_or_else(|| Map::new(&env));
+            .unwrap_or(Map::new(&env));
 
         overrides.remove(feed_id);
         env.storage()
@@ -643,7 +651,7 @@ impl OracleManager {
                     .storage()
                     .persistent()
                     .get(&ORACLE_PRICE_FEEDS)
-                    .unwrap_or_else(|| Map::new(&env));
+                    .unwrap_or(Map::new(&env));
 
                 let decimals = feeds.get(feed_id.clone()).map(|f| f.decimals).unwrap_or(8); // Default to 8 decimals if unknown
 

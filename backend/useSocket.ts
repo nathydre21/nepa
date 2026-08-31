@@ -132,9 +132,7 @@ export const useSocket = ({ token }: { token: string | null }) => {
     socket.on('reconnect_attempt', onReconnectAttempt);
     socket.on('notification', onNotification);
 
-    // Cleanup function
     return () => {
-      // Remove all event listeners
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
       socket.off('connect_error', onConnectError);
@@ -145,8 +143,7 @@ export const useSocket = ({ token }: { token: string | null }) => {
       socket.off('reconnect_attempt', onReconnectAttempt);
       socket.off('notification', onNotification);
 
-      // Clean up any additional event listeners created by subscribe
-      cleanupRef.current.forEach(cleanup => cleanup());
+      cleanupRef.current.forEach((cleanup) => cleanup());
       cleanupRef.current = [];
 
       // Disconnect socket properly
@@ -168,20 +165,17 @@ export const useSocket = ({ token }: { token: string | null }) => {
    */
   const subscribe = useCallback((event: string, callback: (data: any) => void) => {
     if (!socketRef.current) {
-      return () => {}; // Return empty cleanup function if socket doesn't exist
+      return () => {};
     }
 
     const socket = socketRef.current;
     socket.on(event, callback);
 
-    // Create cleanup function for this specific event
     const cleanup = () => {
       socket.off(event, callback);
     };
 
-    // Store cleanup function for later use
     cleanupRef.current.push(cleanup);
-
     return cleanup;
   }, []);
 
@@ -189,7 +183,7 @@ export const useSocket = ({ token }: { token: string | null }) => {
    * Manual cleanup function for external use
    */
   const cleanup = useCallback(() => {
-    cleanupRef.current.forEach(cleanup => cleanup());
+    cleanupRef.current.forEach((fn) => fn());
     cleanupRef.current = [];
     
     if (socketRef.current) {
@@ -210,6 +204,6 @@ export const useSocket = ({ token }: { token: string | null }) => {
     lastMessage,
     lastError,
     subscribe,
-    cleanup
+    cleanup,
   };
 };

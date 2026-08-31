@@ -69,6 +69,57 @@ const DATABASES = {
   }
 };
 
+function resolveRollbackPath(migrationsPath, migrationFile, serviceName) {
+  const candidates = [
+    path.join(migrationsPath, 'rollback', migrationFile.replace('.sql', '_rollback.sql')),
+    path.join(migrationsPath, 'rollback', migrationFile.replace('_create_', '_rollback_')),
+  ];
+
+  if (serviceName) {
+    const match = migrationFile.match(/(\d+)_create_(\w+)_tables\.sql/);
+    if (match) {
+      candidates.push(
+        path.join(migrationsPath, 'rollback', `${match[1]}_rollback_${match[2]}.sql`)
+      );
+    }
+  }
+
+  return candidates.find((candidate) => fs.existsSync(candidate)) || null;
+}
+
+function parseServiceMigrationFile(migrationFile) {
+  const serviceMatch = migrationFile.match(/(\d+)_create_(\w+)_tables\.sql/);
+  if (!serviceMatch) {
+    return null;
+  }
+
+  return {
+    order: serviceMatch[1],
+    serviceName: serviceMatch[2],
+  };
+}
+
+function listServiceMigrationFiles(migrationsPath) {
+  return fs.readdirSync(migrationsPath)
+    .filter((file) => file.endsWith('.sql') && !file.includes('rollback'))
+    .filter((file) => parseServiceMigrationFile(file))
+    .sort();
+}
+
+const UPDATED_AT_TRIGGER_FUNCTION_SQL = `
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+`;
+
+async function ensureUpdatedAtTriggerFunction(client) {
+  await client.query(UPDATED_AT_TRIGGER_FUNCTION_SQL);
+}
+
 class MigrationRunner {
   constructor() {
     this.migrationsPath = path.join(__dirname);
@@ -124,6 +175,7 @@ class MigrationRunner {
       const migrationSQL = fs.readFileSync(migrationPath, 'utf8');
       
       await client.query('BEGIN');
+      await ensureUpdatedAtTriggerFunction(client);
       await client.query(migrationSQL);
       await client.query(
         'INSERT INTO migrations (filename) VALUES ($1)',
@@ -154,11 +206,10 @@ class MigrationRunner {
     try {
       console.log(`Rolling back migration ${migrationFile} for ${serviceName}...`);
       
-      // Read and execute rollback
-      const rollbackPath = path.join(this.migrationsPath, 'rollback', migrationFile.replace('.sql', '_rollback.sql'));
-      
-      if (!fs.existsSync(rollbackPath)) {
-        throw new Error(`Rollback file not found: ${rollbackPath}`);
+      const rollbackPath = resolveRollbackPath(this.migrationsPath, migrationFile, serviceName);
+
+      if (!rollbackPath) {
+        throw new Error(`Rollback file not found for migration: ${migrationFile}`);
       }
 
       const rollbackSQL = fs.readFileSync(rollbackPath, 'utf8');
@@ -183,32 +234,40 @@ class MigrationRunner {
   }
 
   async runAllMigrations() {
-    const migrationFiles = fs.readdirSync(this.migrationsPath)
-      .filter(file => file.endsWith('.sql') && !file.includes('rollback'))
-      .sort();
+    const migrationFiles = listServiceMigrationFiles(this.migrationsPath);
 
     console.log('🚀 Starting database migrations for all services...');
 
     for (const migrationFile of migrationFiles) {
-      const serviceMatch = migrationFile.match(/(\d+)_create_(\w+)_tables\.sql/);
-      if (serviceMatch) {
-        const serviceName = serviceMatch[2];
-        try {
-          await this.runMigration(serviceName, migrationFile);
-        } catch (error) {
-          console.error(`Migration failed for ${serviceName}, stopping execution`);
-          process.exit(1);
-        }
+      const parsed = parseServiceMigrationFile(migrationFile);
+      if (!parsed) {
+        continue;
+      }
+
+      try {
+        await this.runMigration(parsed.serviceName, migrationFile);
+      } catch (error) {
+        console.error(`Migration failed for ${parsed.serviceName}, stopping execution`);
+        process.exit(1);
       }
     }
 
     console.log('✅ All migrations completed successfully!');
   }
 
+  async rollbackMigrationFile(migrationFile) {
+    const parsed = parseServiceMigrationFile(migrationFile);
+    if (!parsed) {
+      throw new Error(`Unsupported migration file: ${migrationFile}`);
+    }
+
+    await this.rollbackMigration(parsed.serviceName, migrationFile);
+    console.log(`✅ Rollback ${migrationFile} completed successfully!`);
+  }
+
   async rollbackLastMigration() {
-    const migrationFiles = fs.readdirSync(this.migrationsPath)
-      .filter(file => file.endsWith('.sql') && !file.includes('rollback'))
-      .sort()
+    const migrationFiles = listServiceMigrationFiles(this.migrationsPath)
+      .slice()
       .reverse();
 
     if (migrationFiles.length === 0) {
@@ -216,19 +275,32 @@ class MigrationRunner {
       return;
     }
 
-    const lastMigration = migrationFiles[0];
-    const serviceMatch = lastMigration.match(/(\d+)_create_(\w+)_tables\.sql/);
-    
-    if (serviceMatch) {
-      const serviceName = serviceMatch[2];
+    for (const migrationFile of migrationFiles) {
+      const parsed = parseServiceMigrationFile(migrationFile);
+      const rollbackPath = resolveRollbackPath(this.migrationsPath, migrationFile, parsed?.serviceName);
+
+      if (!rollbackPath) {
+        continue;
+      }
+
       try {
-        await this.rollbackMigration(serviceName, lastMigration);
-        console.log('✅ Last migration rolled back successfully!');
+        await this.rollbackMigration(parsed.serviceName, migrationFile);
+        console.log('✅ Last rollback-capable migration rolled back successfully!');
+        return;
       } catch (error) {
         console.error('Rollback failed:', error.message);
         process.exit(1);
       }
     }
+
+    console.log('No rollback scripts available for configured migrations');
+  }
+
+  listRollbackableMigrations() {
+    return listServiceMigrationFiles(this.migrationsPath).filter((migrationFile) => {
+      const parsed = parseServiceMigrationFile(migrationFile);
+      return Boolean(resolveRollbackPath(this.migrationsPath, migrationFile, parsed?.serviceName));
+    });
   }
 
   async getMigrationStatus() {
@@ -276,17 +348,25 @@ async function main() {
     case 'down':
       await runner.rollbackLastMigration();
       break;
+    case 'rollback':
+      if (!process.argv[3]) {
+        console.error('❌ Missing migration file argument');
+        process.exit(1);
+      }
+      await runner.rollbackMigrationFile(process.argv[3]);
+      break;
     case 'status':
       await runner.getMigrationStatus();
       break;
     default:
       console.log(`
-Usage: node migration_runner.js <command>
+Usage: node migration_runner.js <command> [args]
 
 Commands:
-  up     - Run all pending migrations
-  down   - Rollback the last migration
-  status - Show migration status for all services
+  up                          - Run all pending migrations
+  down                        - Rollback the last migration with a rollback script
+  rollback <migration-file>   - Rollback a specific migration file
+  status                      - Show migration status for all services
 
 Environment Variables:
   Set database connection details for each service:
@@ -302,7 +382,17 @@ Environment Variables:
 }
 
 if (require.main === module) {
-  main().catch(console.error);
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
 }
 
-module.exports = MigrationRunner;
+module.exports = {
+  MigrationRunner,
+  resolveRollbackPath,
+  parseServiceMigrationFile,
+  listServiceMigrationFiles,
+  UPDATED_AT_TRIGGER_FUNCTION_SQL,
+  ensureUpdatedAtTriggerFunction,
+};

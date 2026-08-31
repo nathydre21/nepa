@@ -88,7 +88,6 @@ impl UpgradeProxy {
     }
 
     /// Migrate data from old implementation (admin only)
-    #[allow(dead_code)]
     pub fn migrate_data(env: Env, admin: Address) -> Result<(), Symbol> {
         // Verify caller is admin
         let current_admin = Self::get_admin(env.clone());
@@ -117,15 +116,16 @@ impl UpgradeProxy {
     }
 
     /// Fallback function to delegate calls to implementation
-    #[allow(dead_code)]
     pub fn fallback(
-        _env: Env,
+        env: Env,
         _function_name: Symbol,
         _args: soroban_sdk::Vec<soroban_sdk::Val>,
     ) -> Result<soroban_sdk::Val, Symbol> {
+        let _implementation = Self::get_implementation(env.clone());
+
         // This would delegate the call to the implementation contract
         // In a real implementation, you'd use the Soroban SDK's delegation features
         // For now, we'll return an error indicating the function needs to be implemented
-        Err(symbol_short!("NOT_IMPL"))
+        Err(symbol_short!("NO_IMPL"))
     }
 }

@@ -19,7 +19,7 @@ async function runMigration() {
     // 2. Run migrations (Expand phase)
     // We assume migrations are additive (safe)
     console.log('📦 Applying migrations...');
-    const { stdout, stderr } = await execAsync('npx prisma migrate deploy');
+    const { stdout, stderr } = await execAsync('npx prisma migrate deploy --schema=./prisma/schema.prisma');
     console.log(stdout);
     if (stderr) console.error(stderr);
 
