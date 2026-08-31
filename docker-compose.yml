@@ -1,0 +1,603 @@
+version: '3.8'
+
+services:
+  # Infrastructure Services
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    container_name: nepa-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin
+      RABBITMQ_DEFAULT_VHOST: /nepa
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - nepa-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  consul:
+    image: consul:1.15
+    container_name: nepa-consul
+    ports:
+      - "8500:8500"
+      - "8600:8600/udp"
+    environment:
+      CONSUL_BIND_INTERFACE: eth0
+    volumes:
+      - consul-data:/consul/data
+    networks:
+      - nepa-network
+    command: agent -server -bootstrap-expect=1 -ui -client=0.0.0.0
+
+  postgres-user:
+    image: postgres:15-alpine
+    container_name: nepa-postgres-user
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: user_service_db
+      POSTGRES_USER: nepa_user
+      POSTGRES_PASSWORD: nepa_password
+    volumes:
+      - postgres-user-data:/var/lib/postgresql/data
+    networks:
+      - nepa-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nepa_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-billing:
+    image: postgres:15-alpine
+    container_name: nepa-postgres-billing
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: billing_service_db
+      POSTGRES_USER: nepa_billing
+      POSTGRES_PASSWORD: nepa_password
+    volumes:
+      - postgres-billing-data:/var/lib/postgresql/data
+    networks:
+      - nepa-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nepa_billing"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-payment:
+    image: postgres:15-alpine
+    container_name: nepa-postgres-payment
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_DB: payment_service_db
+      POSTGRES_USER: nepa_payment
+      POSTGRES_PASSWORD: nepa_password
+    volumes:
+      - postgres-payment-data:/var/lib/postgresql/data
+    networks:
+      - nepa-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nepa_payment"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-notification:
+    image: postgres:15-alpine
+    container_name: nepa-postgres-notification
+    ports:
+      - "5435:5432"
+    environment:
+      POSTGRES_DB: notification_service_db
+      POSTGRES_USER: nepa_notification
+      POSTGRES_PASSWORD: nepa_password
+    volumes:
+      - postgres-notification-data:/var/lib/postgresql/data
+    networks:
+      - nepa-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nepa_notification"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-webhook:
+    image: postgres:15-alpine
+    container_name: nepa-postgres-webhook
+    ports:
+      - "5436:5432"
+    environment:
+      POSTGRES_DB: webhook_service_db
+      POSTGRES_USER: nepa_webhook
+      POSTGRES_PASSWORD: nepa_password
+    volumes:
+      - postgres-webhook-data:/var/lib/postgresql/data
+    networks:
+      - nepa-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nepa_webhook"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-audit:
+    image: postgres:15-alpine
+    container_name: nepa-postgres-audit
+    ports:
+      - "5437:5432"
+    environment:
+      POSTGRES_DB: audit_service_db
+      POSTGRES_USER: nepa_audit
+      POSTGRES_PASSWORD: nepa_password
+    volumes:
+      - postgres-audit-data:/var/lib/postgresql/data
+    networks:
+      - nepa-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nepa_audit"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-document:
+    image: postgres:15-alpine
+    container_name: nepa-postgres-document
+    ports:
+      - "5438:5432"
+    environment:
+      POSTGRES_DB: document_service_db
+      POSTGRES_USER: nepa_document
+      POSTGRES_PASSWORD: nepa_password
+    volumes:
+      - postgres-document-data:/var/lib/postgresql/data
+    networks:
+      - nepa-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nepa_document"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-utility:
+    image: postgres:15-alpine
+    container_name: nepa-postgres-utility
+    ports:
+      - "5439:5432"
+    environment:
+      POSTGRES_DB: utility_service_db
+      POSTGRES_USER: nepa_utility
+      POSTGRES_PASSWORD: nepa_password
+    volumes:
+      - postgres-utility-data:/var/lib/postgresql/data
+    networks:
+      - nepa-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nepa_utility"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-analytics:
+    image: postgres:15-alpine
+    container_name: nepa-postgres-analytics
+    ports:
+      - "5440:5432"
+    environment:
+      POSTGRES_DB: analytics_service_db
+      POSTGRES_USER: nepa_analytics
+      POSTGRES_PASSWORD: nepa_password
+    volumes:
+      - postgres-analytics-data:/var/lib/postgresql/data
+    networks:
+      - nepa-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nepa_analytics"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: nepa-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - nepa-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Microservices
+  api-gateway:
+    build:
+      context: ./backend
+      dockerfile: microservices/Dockerfile.template
+      args:
+        SERVICE_NAME: api-gateway
+        SERVICE_PORT: 3000
+    container_name: nepa-api-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      SERVICE_NAME: api-gateway
+      SERVICE_PORT: 3000
+      RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
+      USE_CONSUL: "true"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      consul:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    networks:
+      - nepa-network
+    restart: unless-stopped
+
+  user-service:
+    build:
+      context: ./backend
+      dockerfile: microservices/Dockerfile.template
+      args:
+        SERVICE_NAME: user-service
+        SERVICE_PORT: 3001
+    container_name: nepa-user-service
+    ports:
+      - "3001:3001"
+    environment:
+      SERVICE_NAME: user-service
+      SERVICE_PORT: 3001
+      RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
+      USE_CONSUL: "true"
+      USER_SERVICE_DATABASE_URL: postgresql://nepa_user:nepa_password@postgres-user:5432/user_service_db
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      consul:
+        condition: service_started
+      postgres-user:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - nepa-network
+    restart: unless-stopped
+
+  payment-service:
+    build:
+      context: ./backend
+      dockerfile: microservices/Dockerfile.template
+      args:
+        SERVICE_NAME: payment-service
+        SERVICE_PORT: 3002
+    container_name: nepa-payment-service
+    ports:
+      - "3002:3002"
+    environment:
+      SERVICE_NAME: payment-service
+      SERVICE_PORT: 3002
+      RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
+      USE_CONSUL: "true"
+      PAYMENT_SERVICE_DATABASE_URL: postgresql://nepa_payment:nepa_password@postgres-payment:5432/payment_service_db
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      consul:
+        condition: service_started
+      postgres-payment:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - nepa-network
+    restart: unless-stopped
+
+  billing-service:
+    build:
+      context: ./backend
+      dockerfile: microservices/Dockerfile.template
+      args:
+        SERVICE_NAME: billing-service
+        SERVICE_PORT: 3003
+    container_name: nepa-billing-service
+    ports:
+      - "3003:3003"
+    environment:
+      SERVICE_NAME: billing-service
+      SERVICE_PORT: 3003
+      RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
+      USE_CONSUL: "true"
+      BILLING_SERVICE_DATABASE_URL: postgresql://nepa_billing:nepa_password@postgres-billing:5432/billing_service_db
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      consul:
+        condition: service_started
+      postgres-billing:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - nepa-network
+    restart: unless-stopped
+
+  notification-service:
+    build:
+      context: ./backend
+      dockerfile: microservices/Dockerfile.template
+      args:
+        SERVICE_NAME: notification-service
+        SERVICE_PORT: 3004
+    container_name: nepa-notification-service
+    ports:
+      - "3004:3004"
+    environment:
+      SERVICE_NAME: notification-service
+      SERVICE_PORT: 3004
+      RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
+      USE_CONSUL: "true"
+      NOTIFICATION_SERVICE_DATABASE_URL: postgresql://nepa_notification:nepa_password@postgres-notification:5432/notification_service_db
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      consul:
+        condition: service_started
+      postgres-notification:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - nepa-network
+    restart: unless-stopped
+
+  document-service:
+    build:
+      context: ./backend
+      dockerfile: microservices/Dockerfile.template
+      args:
+        SERVICE_NAME: document-service
+        SERVICE_PORT: 3005
+    container_name: nepa-document-service
+    ports:
+      - "3005:3005"
+    environment:
+      SERVICE_NAME: document-service
+      SERVICE_PORT: 3005
+      RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
+      USE_CONSUL: "true"
+      DOCUMENT_SERVICE_DATABASE_URL: postgresql://nepa_document:nepa_password@postgres-document:5432/document_service_db
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      consul:
+        condition: service_started
+      postgres-document:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - nepa-network
+    restart: unless-stopped
+
+  utility-service:
+    build:
+      context: ./backend
+      dockerfile: microservices/Dockerfile.template
+      args:
+        SERVICE_NAME: utility-service
+        SERVICE_PORT: 3006
+    container_name: nepa-utility-service
+    ports:
+      - "3006:3006"
+    environment:
+      SERVICE_NAME: utility-service
+      SERVICE_PORT: 3006
+      RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
+      USE_CONSUL: "true"
+      UTILITY_SERVICE_DATABASE_URL: postgresql://nepa_utility:nepa_password@postgres-utility:5432/utility_service_db
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      consul:
+        condition: service_started
+      postgres-utility:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - nepa-network
+    restart: unless-stopped
+
+  analytics-service:
+    build:
+      context: ./backend
+      dockerfile: microservices/Dockerfile.template
+      args:
+        SERVICE_NAME: analytics-service
+        SERVICE_PORT: 3007
+    container_name: nepa-analytics-service
+    ports:
+      - "3007:3007"
+    environment:
+      SERVICE_NAME: analytics-service
+      SERVICE_PORT: 3007
+      RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
+      USE_CONSUL: "true"
+      ANALYTICS_SERVICE_DATABASE_URL: postgresql://nepa_analytics:nepa_password@postgres-analytics:5432/analytics_service_db
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      consul:
+        condition: service_started
+      postgres-analytics:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - nepa-network
+    restart: unless-stopped
+
+  webhook-service:
+    build:
+      context: ./backend
+      dockerfile: microservices/Dockerfile.template
+      args:
+        SERVICE_NAME: webhook-service
+        SERVICE_PORT: 3008
+    container_name: nepa-webhook-service
+    ports:
+      - "3008:3008"
+    environment:
+      SERVICE_NAME: webhook-service
+      SERVICE_PORT: 3008
+      RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
+      USE_CONSUL: "true"
+      WEBHOOK_SERVICE_DATABASE_URL: postgresql://nepa_webhook:nepa_password@postgres-webhook:5432/webhook_service_db
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      consul:
+        condition: service_started
+      postgres-webhook:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - nepa-network
+    restart: unless-stopped
+
+  audit-service:
+    build:
+      context: ./backend
+      dockerfile: microservices/Dockerfile.template
+      args:
+        SERVICE_NAME: audit-service
+        SERVICE_PORT: 3009
+    container_name: nepa-audit-service
+    ports:
+      - "3009:3009"
+    environment:
+      SERVICE_NAME: audit-service
+      SERVICE_PORT: 3009
+      RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
+      USE_CONSUL: "true"
+      AUDIT_SERVICE_DATABASE_URL: postgresql://nepa_audit:nepa_password@postgres-audit:5432/audit_service_db
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      consul:
+        condition: service_started
+      postgres-audit:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - nepa-network
+    restart: unless-stopped
+
+  # Monitoring Services
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: nepa-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./backend/microservices/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    networks:
+      - nepa-network
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: nepa-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - nepa-network
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+networks:
+  nepa-network:
+    driver: bridge
+
+volumes:
+  rabbitmq-data:
+  consul-data:
+  postgres-user-data:
+  postgres-billing-data:
+  postgres-payment-data:
+  postgres-notification-data:
+  postgres-webhook-data:
+  postgres-audit-data:
+  postgres-document-data:
+  postgres-utility-data:
+  postgres-analytics-data:
+  redis-data:
+  prometheus-data:
+  grafana-data:
