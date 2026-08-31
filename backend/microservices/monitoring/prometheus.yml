@@ -1,0 +1,189 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'nepa'
+    environment: 'development'
+
+scrape_configs:
+  # API Gateway
+  - job_name: 'api-gateway'
+    static_configs:
+      - targets: ['api-gateway:3000']
+        labels:
+          service: 'api-gateway'
+          component: 'gateway'
+
+  # User Service
+  - job_name: 'user-service'
+    static_configs:
+      - targets: ['user-service:3001']
+        labels:
+          service: 'user-service'
+          component: 'core'
+
+  # Payment Service
+  - job_name: 'payment-service'
+    static_configs:
+      - targets: ['payment-service:3002']
+        labels:
+          service: 'payment-service'
+          component: 'core'
+
+  # Billing Service
+  - job_name: 'billing-service'
+    static_configs:
+      - targets: ['billing-service:3003']
+        labels:
+          service: 'billing-service'
+          component: 'core'
+
+  # Notification Service
+  - job_name: 'notification-service'
+    static_configs:
+      - targets: ['notification-service:3004']
+        labels:
+          service: 'notification-service'
+          component: 'core'
+
+  # Document Service
+  - job_name: 'document-service'
+    static_configs:
+      - targets: ['document-service:3005']
+        labels:
+          service: 'document-service'
+          component: 'supporting'
+
+  # Utility Service
+  - job_name: 'utility-service'
+    static_configs:
+      - targets: ['utility-service:3006']
+        labels:
+          service: 'utility-service'
+          component: 'supporting'
+
+  # Analytics Service
+  - job_name: 'analytics-service'
+    static_configs:
+      - targets: ['analytics-service:3007']
+        labels:
+          service: 'analytics-service'
+          component: 'supporting'
+
+  # Webhook Service
+  - job_name: 'webhook-service'
+    static_configs:
+      - targets: ['webhook-service:3008']
+        labels:
+          service: 'webhook-service'
+          component: 'core'
+
+  # Audit Service
+  - job_name: 'audit-service'
+    static_configs:
+      - targets: ['audit-service:3009']
+        labels:
+          service: 'audit-service'
+          component: 'core'
+
+  # Infrastructure - RabbitMQ
+  - job_name: 'rabbitmq'
+    static_configs:
+      - targets: ['rabbitmq:15692']
+        labels:
+          service: 'rabbitmq'
+          component: 'infrastructure'
+
+  # Infrastructure - Redis
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:9121']
+        labels:
+          service: 'redis'
+          component: 'infrastructure'
+
+  # Infrastructure - Consul
+  - job_name: 'consul'
+    static_configs:
+      - targets: ['consul:8500']
+        labels:
+          service: 'consul'
+          component: 'infrastructure'
+
+  # Infrastructure - PostgreSQL
+  - job_name: 'postgres-user'
+    static_configs:
+      - targets: ['postgres-user:9187']
+        labels:
+          service: 'postgres'
+          component: 'infrastructure'
+          database: 'user-service'
+
+  - job_name: 'postgres-billing'
+    static_configs:
+      - targets: ['postgres-billing:9187']
+        labels:
+          service: 'postgres'
+          component: 'infrastructure'
+          database: 'billing-service'
+
+  - job_name: 'postgres-payment'
+    static_configs:
+      - targets: ['postgres-payment:9187']
+        labels:
+          service: 'postgres'
+          component: 'infrastructure'
+          database: 'payment-service'
+
+  - job_name: 'postgres-notification'
+    static_configs:
+      - targets: ['postgres-notification:9187']
+        labels:
+          service: 'postgres'
+          component: 'infrastructure'
+          database: 'notification-service'
+
+  - job_name: 'postgres-webhook'
+    static_configs:
+      - targets: ['postgres-webhook:9187']
+        labels:
+          service: 'postgres'
+          component: 'infrastructure'
+          database: 'webhook-service'
+
+  - job_name: 'postgres-audit'
+    static_configs:
+      - targets: ['postgres-audit:9187']
+        labels:
+          service: 'postgres'
+          component: 'infrastructure'
+          database: 'audit-service'
+
+  - job_name: 'postgres-document'
+    static_configs:
+      - targets: ['postgres-document:9187']
+        labels:
+          service: 'postgres'
+          component: 'infrastructure'
+          database: 'document-service'
+
+  - job_name: 'postgres-utility'
+    static_configs:
+      - targets: ['postgres-utility:9187']
+        labels:
+          service: 'postgres'
+          component: 'infrastructure'
+          database: 'utility-service'
+
+  - job_name: 'postgres-analytics'
+    static_configs:
+      - targets: ['postgres-analytics:9187']
+        labels:
+          service: 'postgres'
+          component: 'infrastructure'
+          database: 'analytics-service'
+
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

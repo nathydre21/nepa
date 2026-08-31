@@ -111,11 +111,10 @@ test-data/
 
 # PR description and local documentation files
 PR_*.md
+PULL_REQUEST_*.md
 GITHUB_ISSUES.md
 TEST_IMPLEMENTATION_SUMMARY.md
 PHASE_1_TESTING_COMPLETE.md
-# PR description files
-PR_*.md
 
 # Deprecated frontend
 nepa-frontend/package-lock.json

@@ -191,13 +191,13 @@ jobs:
 
       - name: Install contract dapp dependencies
         run: |
-          cd contract
+          cd contract/dapp
           npm install
 
       - name: Run contract dapp tests
         continue-on-error: true
         run: |
-          cd contract
+          cd contract/dapp
           npm test || echo "⚠️ Contract dapp test warnings (non-blocking)"
         env:
           NODE_ENV: test
