@@ -137,9 +137,9 @@
     "typescript": "^5.2.2"
   },
   "scripts": {
-    "dev": "ts-node server.ts",
-    "build": "tsc",
-    "start": "node dist/server.js",
+    "dev": "node init && ts-node server.ts",
+    "build": "node init && tsc",
+    "start": "node init && node dist/server.js",
     "prisma:generate": "prisma generate --schema=./prisma/schema.prisma",
     "prisma:migrate": "prisma migrate dev --schema=./prisma/schema.prisma",
     "db:generate-all": "bash scripts/generate-all-clients.sh",
